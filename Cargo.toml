@@ -7,3 +7,5 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+multiwii_serial_protocol = "0.1.0"
+serialport = "3.3.0"
