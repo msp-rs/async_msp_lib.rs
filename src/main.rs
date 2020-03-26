@@ -5,11 +5,11 @@ extern crate serialport;
 
 use serialport::{available_ports, open};
 
-use async_std::fs::File;
+use async_std::fs::OpenOptions;
 use async_std::io::prelude::*;
 use async_std::io::BufWriter;
 use async_std::sync::channel;
-use async_std::{io,task};
+use async_std::{io, task};
 
 extern crate packed_struct;
 use packed_struct::prelude::*;
@@ -18,6 +18,7 @@ extern crate packed_struct_codegen;
 
 
 // TODO: move this to multiwii_serial_protocol.rs library
+// TODO: and figure out why we can't call unpack on structs from multiwii library
 #[derive(PackedStruct, Debug, Copy, Clone)]
 #[packed_struct(bytes = "6", endian = "lsb", bit_numbering = "msb0")]
 pub struct MspDataFlashRead {
@@ -80,7 +81,8 @@ async fn main() {
                 Some(packet) => {
                     let size = packet.packet_size_bytes();
                     let mut output = vec![0; size];
-                    packet.serialize(&mut output).unwrap();
+
+                    packet.serialize(&mut output).expect("Failed to serialize");
                     clone
                         .write(&output)
                         .expect("Failed to write to serial port");
@@ -104,8 +106,8 @@ async fn main() {
                         Ok(Some(p)) => {
                             msp_send.send(p).await;
                         },
-                        Err(_) => {
-                            println!("bad crc");
+                        Err(e) => {
+                            println!("bad crc {:?}", e);
                             break;
                         },
                         Ok(None) => () //println!("not yet {:?}", &[b]),
@@ -120,22 +122,32 @@ async fn main() {
     let request_next_packet = task::spawn(async move {
         let mut used_size = 0u32;
         let mut next_address = 0u32;
-        // let f = File::open("/tmp/trash.bin").await;
-        // let mut writer = BufWriter::new(f);
+
+        let f = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open("/tmp/trash.bin").await?;
+        let mut buf_writer = BufWriter::new(f);
 
         loop {
             match msp_recv.recv().await {
                 None => break,
                 Some(packet) => {
-                    // TODO: create strust using https://github.com/hashmismatch/packed_struct.rs
                     if packet.cmd == multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_SUMMARY as u8 {
-                        let summary = MspDataFlashSummaryReply::unpack_from_slice(&packet.data).unwrap();
+
+                        let summary = match MspDataFlashSummaryReply::unpack_from_slice(&packet.data) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                println!("{:?}", e);
+                                break;
+                            },
+                        };
                         used_size = summary.used_size_bytes;
-                        println!("{:?}", used_size);
 
                         let payload = MspDataFlashRead {
 		                        read_address: 11111,  // next_address
-                            read_length: 0xFA, // TODO: why are we geting crc error if parsing more the 254 bytes
+                            read_length: 0xFF, // TODO: why are we geting crc error if parsing more the 254 bytes
 	                      };
                         let packed = payload.pack();
                         // println!("CCCCCCCCCCCCCCCCCCC {:?}", packed.to_vec());
@@ -157,7 +169,7 @@ async fn main() {
 
                         // extract the read address from the packet
                         let mut s = [0; 4];
-                        &mut s[..].copy_from_slice(&packet.data[..4]);
+                        s.copy_from_slice(&packet.data[..4]);
                         let packet_address = u32::from_le_bytes(s);
 
                         let packet_payload;
@@ -170,15 +182,14 @@ async fn main() {
 
                             next_address += packet_payload.len() as u32;
                             if used_size < next_address {
-                                // TODO: we are done we reached the end
+                                println!("done");
                                 break;
                             }
 
-                            // print!("{:?}", packet_payload);
-                            io::stdout().write(packet_payload).await;
+                            // f.write(packet_payload).await?;
+                            buf_writer.write(packet_payload).await?;
+                            println!("{:?}", packet_payload);
                         }
-
-
 
                         let payload = MspDataFlashRead {
 		                        read_address: next_address,
@@ -193,14 +204,13 @@ async fn main() {
 	                      };
 
                         serial_writer_send_clone.send(packet).await;
-
-                        // TODO: write file after send
                     }
                 }
             }
         }
-    });
 
+        Ok::<(), std::io::Error>(())
+    });
     let packet = multiwii_serial_protocol::MspPacket {
 		    cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_SUMMARY as u8,
 		    direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
@@ -209,7 +219,7 @@ async fn main() {
 
     serial_writer_send.send(packet).await;
 
-    request_next_packet.await;
+    request_next_packet.await.expect("failed to read blackbox");
 
     // TODO: use arg parse of some sort
 }
