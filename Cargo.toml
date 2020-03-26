@@ -9,6 +9,8 @@ edition = "2018"
 [dependencies]
 multiwii_serial_protocol = "0.1.0"
 serialport = "3.3.0"
+packed_struct = "0.3"
+packed_struct_codegen = "0.3"
 
 [dependencies.async-std]
 version = "1.5.0"
