@@ -51,24 +51,28 @@ pub struct MspDataFlashSummaryReply {
 
 #[async_std::main]
 async fn main() {
-    let (serial_reader_send, serial_reader_recv) = channel(0xFFFF);
-
     let mut serialport = open(&available_ports().expect("No serial port")[0].port_name)
         .expect("Failed to open serial port");
 
     // Clone the port
     let mut clone = serialport.try_clone().expect("Failed to clone");
 
+    let (msp_send, msp_recv) = channel(1);
+
     // green-thread 1: read into input channel from serial(reading from serial is blocking)
     task::spawn(async move {
+        let mut parser = multiwii_serial_protocol::MspParser::new();
         loop {
-            let mut serial_buf: Vec<u8> = vec![0; 1];
+            let mut serial_buf: Vec<u8> = vec![0; 1000];
             // TODO: i think we should use epoll to know when to read the serial
             match serialport.read(serial_buf.as_mut_slice()) {
-                Ok(bytes) => { // where does the bytes appeared
-                    if bytes == 1 { // what if we received more then one? will we miss it? 
-                        // println!("got byte {:?}", serial_buf[0]);
-                        serial_reader_send.send(serial_buf[0]).await;
+                Ok(bytes) => {
+                    for n in 0..bytes {
+                        match parser.parse(serial_buf[n]) {
+                            Ok(Some(p)) => msp_send.send(p).await,
+                            Err(e) => println!("bad crc {:?}", e),
+                            Ok(None) => ()
+                        }
                     }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::TimedOut => task::yield_now().await,
@@ -92,30 +96,6 @@ async fn main() {
                         .write(&output)
                         .expect("Failed to write to serial port");
                 }
-            }
-        }
-    });
-
-    let (msp_send, msp_recv) = channel(1);
-
-    // green-thread 2: parse the packets from channel
-    //               : on new packet write into output channel the next request packet
-    let mut parser = multiwii_serial_protocol::MspParser::new();
-    task::spawn(async move {
-        loop {
-            match serial_reader_recv.recv().await {
-                None => break,
-                Some(b) => {
-                    match parser.parse(b) {
-                        Ok(Some(p)) => {
-                            msp_send.send(p).await;
-                        },
-                        Err(e) => {
-                            println!("bad crc {:?}", e);
-                        },
-                        Ok(None) => ()
-                    }
-                },
             }
         }
     });
