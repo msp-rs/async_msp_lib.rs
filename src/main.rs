@@ -48,7 +48,7 @@ pub struct MspDataFlashSummaryReply {
 
 #[async_std::main]
 async fn main() {
-    let (serial_reader_send, serial_reader_recv) = channel(4096);
+    let (serial_reader_send, serial_reader_recv) = channel(0xFFFF);
 
     let mut serialport = open(&available_ports().expect("No serial port")[0].port_name)
         .expect("Failed to open serial port");
@@ -82,7 +82,7 @@ async fn main() {
                     let size = packet.packet_size_bytes();
                     let mut output = vec![0; size];
 
-                    packet.serialize(&mut output).expect("Failed to serialize");
+                    packet.serialize_v2(&mut output).expect("Failed to serialize");
                     clone
                         .write(&output)
                         .expect("Failed to write to serial port");
@@ -110,7 +110,7 @@ async fn main() {
                             println!("bad crc {:?}", e);
                             break;
                         },
-                        Ok(None) => () //println!("not yet {:?}", &[b]),
+                        Ok(None) => ()
                     }
                 },
             }
@@ -134,7 +134,7 @@ async fn main() {
             match msp_recv.recv().await {
                 None => break,
                 Some(packet) => {
-                    if packet.cmd == multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_SUMMARY as u8 {
+                    if packet.cmd == multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_SUMMARY as u16 {
 
                         let summary = match MspDataFlashSummaryReply::unpack_from_slice(&packet.data) {
                             Ok(p) => p,
@@ -146,26 +146,21 @@ async fn main() {
                         used_size = summary.used_size_bytes;
 
                         let payload = MspDataFlashRead {
-		                        read_address: 11111,  // next_address
-                            read_length: 0xFF, // TODO: why are we geting crc error if parsing more the 254 bytes
+		                        read_address: next_address,
+                            read_length: 0xFFFF,
 	                      };
                         let packed = payload.pack();
-                        // println!("CCCCCCCCCCCCCCCCCCC {:?}", packed.to_vec());
-                        // println!("DDDDDDDDDDDDDDDDDDD {:?}", vec![0x01, 0x00, 0x00, 0x00,   0x01, 0x00]);
 
                         let packet = multiwii_serial_protocol::MspPacket {
-		                        cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u8,
+		                        cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
 		                        direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
 		                        data: alloc::borrow::Cow::Owned(packed.to_vec()),
-                            // data: alloc::borrow::Cow::Owned(vec![]),
-                            // data: alloc::borrow::Cow::Owned(vec![0,0,0,0   ,96, 0]),
-                            // data: alloc::borrow::Cow::Owned(vec![0x01, 0x00, 0x00, 0x00,  0x02, 0x00]),
 	                      };
 
                         serial_writer_send_clone.send(packet).await;
                     }
 
-                    if packet.cmd == multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u8 {
+                    if packet.cmd == multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16 {
 
                         // extract the read address from the packet
                         let mut s = [0; 4];
@@ -177,7 +172,6 @@ async fn main() {
                             // remove the last address bytes and send to remaning payload to file stream(stdout)
                             packet_payload = &packet.data[4..];
 
-                            // println!("got shitty packet {:?}", packet_address);
                             // TOOD: open a new channel for the file write
 
                             next_address += packet_payload.len() as u32;
@@ -186,23 +180,23 @@ async fn main() {
                                 break;
                             }
 
-                            // f.write(packet_payload).await?;
                             buf_writer.write(packet_payload).await?;
-                            println!("{:?}", packet_payload);
+                            // println!("{:?}", packet_payload);
                         }
 
                         let payload = MspDataFlashRead {
 		                        read_address: next_address,
-                            read_length: 0xFA, // TODO: why are we geting crc error if parsing more the 254 bytes
+                            read_length: 0xFFFF,
 	                      };
                         let packed = payload.pack();
 
                         let packet = multiwii_serial_protocol::MspPacket {
-		                        cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u8,
+		                        cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
 		                        direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
 		                        data: alloc::borrow::Cow::Owned(packed.to_vec()),
 	                      };
 
+                        println!("getting packet packet {:?}", next_address);
                         serial_writer_send_clone.send(packet).await;
                     }
                 }
@@ -212,7 +206,7 @@ async fn main() {
         Ok::<(), std::io::Error>(())
     });
     let packet = multiwii_serial_protocol::MspPacket {
-		    cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_SUMMARY as u8,
+		    cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_SUMMARY as u16,
 		    direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
 		    data: alloc::borrow::Cow::Owned(vec![])
 	  };
