@@ -11,6 +11,9 @@ use async_std::io::BufWriter;
 use async_std::sync::channel;
 use async_std::{io, task};
 
+use async_std::future;
+use std::time::Duration;
+
 extern crate packed_struct;
 use packed_struct::prelude::*;
 #[macro_use]
@@ -60,9 +63,11 @@ async fn main() {
     task::spawn(async move {
         loop {
             let mut serial_buf: Vec<u8> = vec![0; 1];
+            // TODO: i think we should use epoll to know when to read the serial
             match serialport.read(serial_buf.as_mut_slice()) {
                 Ok(bytes) => { // where does the bytes appeared
                     if bytes == 1 { // what if we received more then one? will we miss it? 
+                        // println!("got byte {:?}", serial_buf[0]);
                         serial_reader_send.send(serial_buf[0]).await;
                     }
                 }
@@ -95,10 +100,9 @@ async fn main() {
 
     // green-thread 2: parse the packets from channel
     //               : on new packet write into output channel the next request packet
+    let mut parser = multiwii_serial_protocol::MspParser::new();
     task::spawn(async move {
-        let mut parser = multiwii_serial_protocol::MspParser::new();
         loop {
-            // TODO: i think we should use epoll to know when to read the serial
             match serial_reader_recv.recv().await {
                 None => break,
                 Some(b) => {
@@ -108,7 +112,6 @@ async fn main() {
                         },
                         Err(e) => {
                             println!("bad crc {:?}", e);
-                            break;
                         },
                         Ok(None) => ()
                     }
@@ -131,9 +134,37 @@ async fn main() {
         let mut buf_writer = BufWriter::new(f);
 
         loop {
-            match msp_recv.recv().await {
+            let timeout_res = future::timeout(Duration::from_millis(100), msp_recv.recv()).await;
+
+            // resend the packet
+            if timeout_res.is_err() {
+                if used_size == 0 {
+                    continue
+                }
+
+                println!("failed to receive packet");
+
+                let payload = MspDataFlashRead {
+		                read_address: next_address,
+                    read_length: 0x1000,
+	              };
+                let packed = payload.pack();
+
+                let packet = multiwii_serial_protocol::MspPacket {
+		                cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
+		                direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
+		                data: alloc::borrow::Cow::Owned(packed.to_vec()),
+	              };
+
+                serial_writer_send_clone.send(packet).await;
+                continue
+            }
+
+            // unwrap the real result
+            match timeout_res.unwrap() {
                 None => break,
                 Some(packet) => {
+                    // TODO: on bad length, reset the parser
                     if packet.cmd == multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_SUMMARY as u16 {
 
                         let summary = match MspDataFlashSummaryReply::unpack_from_slice(&packet.data) {
@@ -147,7 +178,7 @@ async fn main() {
 
                         let payload = MspDataFlashRead {
 		                        read_address: next_address,
-                            read_length: 0xFFFF,
+                            read_length: 0x1000,
 	                      };
                         let packed = payload.pack();
 
@@ -167,26 +198,38 @@ async fn main() {
                         s.copy_from_slice(&packet.data[..4]);
                         let packet_address = u32::from_le_bytes(s);
 
-                        let packet_payload;
-                        if packet_address == next_address {
-                            // remove the last address bytes and send to remaning payload to file stream(stdout)
-                            packet_payload = &packet.data[4..];
+                        // TODO: we could buffer the blocks writer
+                        //     : we could send like 5 chunks ahead
+                        //     : and wait for the blocks replay
+                        //     : we save dictionary of the address blocks
+                        //     : once the block is received we remove it from the map
+                        //     : and pop the next block into the write channel
 
-                            // TOOD: open a new channel for the file write
-
-                            next_address += packet_payload.len() as u32;
-                            if used_size < next_address {
-                                println!("done");
-                                break;
-                            }
-
-                            buf_writer.write(packet_payload).await?;
-                            // println!("{:?}", packet_payload);
+                        // Verify that the address of the memory returned matches what the caller asked for
+                        if packet_address != next_address {
+                            continue
                         }
+
+                        // remove the last address bytes and send to remaning payload to file stream(stdout)
+                        let packet_payload = &packet.data[4..];
+
+                        // TOOD: open a new channel for the file write
+
+                        buf_writer.write(packet_payload).await?;
+
+                        next_address += packet_payload.len() as u32;
+
+                        if next_address >= used_size {
+                            buf_writer.flush().await?;
+                            println!("done");
+                            break;
+                        }
+
+                        // println!("{:?}", packet_payload);
 
                         let payload = MspDataFlashRead {
 		                        read_address: next_address,
-                            read_length: 0xFFFF,
+                            read_length: 0x1000,
 	                      };
                         let packed = payload.pack();
 
@@ -196,7 +239,7 @@ async fn main() {
 		                        data: alloc::borrow::Cow::Owned(packed.to_vec()),
 	                      };
 
-                        println!("getting packet packet {:?}", next_address);
+                        println!("getting packet packet {:?} of {:?}", next_address, used_size);
                         serial_writer_send_clone.send(packet).await;
                     }
                 }
