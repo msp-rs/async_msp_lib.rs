@@ -101,77 +101,48 @@ async fn main() {
     });
 
     let serial_writer_send_clone = serial_writer_send.clone();
+
+
+    // TODO: await for summary
+    let packet = multiwii_serial_protocol::MspPacket {
+        cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_SUMMARY as u16,
+        direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
+        data: alloc::borrow::Cow::Owned(vec![]),
+    };
+
+    serial_writer_send.send(packet).await;
+    let summary_packet = msp_recv.recv().await.unwrap();
+
+    if summary_packet.cmd != multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_SUMMARY as u16 {
+        println!("failed to receive summary");
+        return;
+    }
+
+    let summary = MspDataFlashSummaryReply::unpack_from_slice(&summary_packet.data).unwrap();
+    let used_size = summary.used_size_bytes;
+
     // green-thread 3: read from the write channel and write to serial(writing to serial is blocking)
     let request_next_packet = task::spawn(async move {
-        let mut used_size = 0u32;
-        let mut next_address = 0u32;
-
         let f = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .open("/tmp/trash.bin").await?;
+
         let mut buf_writer = BufWriter::new(f);
 
+        let mut next_address = 0u32;
         loop {
             let timeout_res = future::timeout(Duration::from_millis(100), msp_recv.recv()).await;
 
             // resend the packet
-            if timeout_res.is_err() {
-                if used_size == 0 {
-                    continue
-                }
-
-                println!("failed to receive packet");
-
-                let payload = MspDataFlashRead {
-		                read_address: next_address,
-                    read_length: 0x1000,
-	              };
-                let packed = payload.pack();
-
-                let packet = multiwii_serial_protocol::MspPacket {
-		                cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
-		                direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
-		                data: alloc::borrow::Cow::Owned(packed.to_vec()),
-	              };
-
-                serial_writer_send_clone.send(packet).await;
-                continue
-            }
-
-            // unwrap the real result
-            match timeout_res.unwrap() {
-                None => break,
-                Some(packet) => {
-                    // TODO: on bad length, reset the parser
-                    if packet.cmd == multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_SUMMARY as u16 {
-
-                        let summary = match MspDataFlashSummaryReply::unpack_from_slice(&packet.data) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                println!("{:?}", e);
-                                break;
-                            },
-                        };
-                        used_size = summary.used_size_bytes;
-
-                        let payload = MspDataFlashRead {
-		                        read_address: next_address,
-                            read_length: 0x1000,
-	                      };
-                        let packed = payload.pack();
-
-                        let packet = multiwii_serial_protocol::MspPacket {
-		                        cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
-		                        direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
-		                        data: alloc::borrow::Cow::Owned(packed.to_vec()),
-	                      };
-
-                        serial_writer_send_clone.send(packet).await;
-                    }
-
-                    if packet.cmd == multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16 {
+            if timeout_res.is_ok() {
+                match timeout_res.unwrap() {
+                    None => break,
+                    Some(packet) => {
+                        if packet.cmd != multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16 {
+                            // panic because we recevied unexpected packet
+                        }
 
                         // extract the read address from the packet
                         let mut s = [0; 4];
@@ -196,7 +167,6 @@ async fn main() {
                         // TOOD: open a new channel for the file write
 
                         buf_writer.write(packet_payload).await?;
-
                         next_address += packet_payload.len() as u32;
 
                         if next_address >= used_size {
@@ -204,37 +174,28 @@ async fn main() {
                             println!("done");
                             break;
                         }
-
-                        // println!("{:?}", packet_payload);
-
-                        let payload = MspDataFlashRead {
-		                        read_address: next_address,
-                            read_length: 0x1000,
-	                      };
-                        let packed = payload.pack();
-
-                        let packet = multiwii_serial_protocol::MspPacket {
-		                        cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
-		                        direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
-		                        data: alloc::borrow::Cow::Owned(packed.to_vec()),
-	                      };
-
-                        println!("getting packet packet {:?} of {:?}", next_address, used_size);
-                        serial_writer_send_clone.send(packet).await;
                     }
                 }
             }
+
+            let payload = MspDataFlashRead {
+		            read_address: next_address,
+                read_length: 0x1000,
+	          };
+            let packed = payload.pack();
+
+            let packet = multiwii_serial_protocol::MspPacket {
+		            cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
+		            direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
+		            data: alloc::borrow::Cow::Owned(packed.to_vec()),
+	          };
+
+            println!("getting packet packet {:?} of {:?}", next_address, used_size);
+            serial_writer_send_clone.send(packet).await;
         }
 
         Ok::<(), std::io::Error>(())
     });
-    let packet = multiwii_serial_protocol::MspPacket {
-		    cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_SUMMARY as u16,
-		    direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
-		    data: alloc::borrow::Cow::Owned(vec![])
-	  };
-
-    serial_writer_send.send(packet).await;
 
     request_next_packet.await.expect("failed to read blackbox");
 
