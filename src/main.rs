@@ -8,7 +8,7 @@ use serialport::{available_ports, open};
 use async_std::fs::OpenOptions;
 use async_std::io::prelude::*;
 use async_std::io::BufWriter;
-use async_std::sync::channel;
+use async_std::sync::{channel, Mutex, Arc};
 use async_std::{io, task};
 
 use async_std::future;
@@ -60,15 +60,17 @@ async fn main() {
     let (msp_send, msp_recv) = channel(1);
 
     // green-thread 1: read into input channel from serial(reading from serial is blocking)
+    let parser = multiwii_serial_protocol::MspParser::new();
+    let parser_locked = Arc::new(Mutex::new(parser));
+    let parser_locked_clone = parser_locked.clone();
     task::spawn(async move {
-        let mut parser = multiwii_serial_protocol::MspParser::new();
         loop {
             let mut serial_buf: Vec<u8> = vec![0; 1000];
             // TODO: i think we should use epoll to know when to read the serial
             match serialport.read(serial_buf.as_mut_slice()) {
                 Ok(bytes) => {
                     for n in 0..bytes {
-                        match parser.parse(serial_buf[n]) {
+                        match (*parser_locked.lock().await).parse(serial_buf[n]) {
                             Ok(Some(p)) => msp_send.send(p).await,
                             Err(e) => println!("bad crc {:?}", e),
                             Ok(None) => ()
@@ -133,7 +135,7 @@ async fn main() {
 
         let mut next_address = 0u32;
         loop {
-            let timeout_res = future::timeout(Duration::from_millis(100), msp_recv.recv()).await;
+            let timeout_res = future::timeout(Duration::from_millis(30), msp_recv.recv()).await;
 
             // resend the packet
             if timeout_res.is_ok() {
@@ -176,6 +178,9 @@ async fn main() {
                         }
                     }
                 }
+            } else {
+                println!("reset parser");
+                (*parser_locked_clone.lock().await).reset();
             }
 
             let payload = MspDataFlashRead {
