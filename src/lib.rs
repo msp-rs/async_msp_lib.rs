@@ -53,11 +53,10 @@ pub struct MspDataFlashSummaryReply {
 // }
 
 
-// TODO: _ indiactes unused, not private, change it protonot( stuff without pub are private)
 pub struct FlashDataFile {
-  _chunk_recv: Receiver<MspDataFlashReply>,
-  _msp_writer_send: Sender<MspPacket>,
-  _parser_locked: Arc<Mutex<MspParser>>,
+  chunk_recv: Receiver<MspDataFlashReply>,
+  msp_writer_send: Sender<MspPacket>,
+  parser_locked: Arc<Mutex<MspParser>>,
   used_size: u32,
   next_address: u32,
   // requested_address: u32,
@@ -86,10 +85,10 @@ impl FlashDataFile {
                     data: packed.to_vec(),
                 };
 
-                self._msp_writer_send.send(packet).await;
+                self.msp_writer_send.send(packet).await;
             }
 
-            let timeout_res = future::timeout(Duration::from_millis(50), self._chunk_recv.recv()).await;
+            let timeout_res = future::timeout(Duration::from_millis(50), self.chunk_recv.recv()).await;
 
             // resend the packet
             if timeout_res.is_ok() {
@@ -114,24 +113,24 @@ impl FlashDataFile {
                     }
                 }
             } else {
-                (*self._parser_locked.lock().await).reset();
+                (*self.parser_locked.lock().await).reset();
             }
         }
     }
 }
 
 pub struct INavMsp {
-  _parser_locked: Arc<Mutex<MspParser>>,
+  parser_locked: Arc<Mutex<MspParser>>,
 
-  _msp_reader_send: Sender<MspPacket>,
-  _msp_reader_recv: Receiver<MspPacket>,
-  _msp_writer_send: Sender<MspPacket>,
-  _msp_writer_recv: Receiver<MspPacket>,
+  msp_reader_send: Sender<MspPacket>,
+  msp_reader_recv: Receiver<MspPacket>,
+  msp_writer_send: Sender<MspPacket>,
+  msp_writer_recv: Receiver<MspPacket>,
 
-  _summary_recv: Receiver<MspDataFlashSummaryReply>,
-  _summary_send: Sender<MspDataFlashSummaryReply>,
-  _chunk_recv: Receiver<MspDataFlashReply>,
-  _chunk_send: Sender<MspDataFlashReply>,
+  summary_recv: Receiver<MspDataFlashSummaryReply>,
+  summary_send: Sender<MspDataFlashSummaryReply>,
+  chunk_recv: Receiver<MspDataFlashReply>,
+  chunk_send: Sender<MspDataFlashReply>,
 }
 
 impl INavMsp {
@@ -147,32 +146,32 @@ impl INavMsp {
         let parser_locked = Arc::new(Mutex::new(parser));
 
         return INavMsp {
-            _parser_locked: parser_locked,
-            _msp_reader_send: msp_reader_send,
-            _msp_reader_recv: msp_reader_recv,
-            _msp_writer_send: msp_writer_send,
-            _msp_writer_recv: msp_writer_recv,
+            parser_locked: parser_locked,
+            msp_reader_send: msp_reader_send,
+            msp_reader_recv: msp_reader_recv,
+            msp_writer_send: msp_writer_send,
+            msp_writer_recv: msp_writer_recv,
 
-            _summary_send: summary_send,
-            _summary_recv: summary_recv,
-            _chunk_send: chunk_send,
-            _chunk_recv: chunk_recv,
+            summary_send: summary_send,
+            summary_recv: summary_recv,
+            chunk_send: chunk_send,
+            chunk_recv: chunk_recv,
         };
 	  }
 
     pub fn start(&self, serial: Box<dyn SerialPort>) {
         let serial_clone = serial.try_clone().unwrap();
 
-        INavMsp::_process_input(serial, self._parser_locked.clone(), self._msp_reader_send.clone());
-        INavMsp::_process_output(serial_clone, self._msp_writer_recv.clone());
-        INavMsp::_process_route(
-            self._msp_reader_recv.clone(),
-            self._summary_send.clone(),
-            self._chunk_send.clone(),
+        INavMsp::process_input(serial, self.parser_locked.clone(), self.msp_reader_send.clone());
+        INavMsp::process_output(serial_clone, self.msp_writer_recv.clone());
+        INavMsp::process_route(
+            self.msp_reader_recv.clone(),
+            self.summary_send.clone(),
+            self.chunk_send.clone(),
         );
     }
 
-    fn _process_route(
+    fn process_route(
         msp_reader_recv: Receiver<MspPacket>,
         summary_send: Sender<MspDataFlashSummaryReply>,
         chunk_send: Sender<MspDataFlashReply>,
@@ -209,7 +208,7 @@ impl INavMsp {
     }
 
     // TODO: return joinhandler, so we can stop the tasks on drop
-    fn _process_input(
+    fn process_input(
         mut serial: Box<dyn SerialPort>,
         parser_locked: Arc<Mutex<MspParser>>,
         msp_reader_send: Sender<MspPacket>
@@ -242,7 +241,7 @@ impl INavMsp {
 	  }
 
     // TODO: return joinhandler, so we can stop the tasks on drop
-    fn _process_output(
+    fn process_output(
         mut serial: Box<dyn SerialPort>,
         msp_writer_recv: Receiver<MspPacket>,
     ) {
@@ -273,9 +272,9 @@ impl INavMsp {
         let used_size = summary.used_size_bytes;
 
         return FlashDataFile {
-            _chunk_recv: self._chunk_recv.clone(),
-            _msp_writer_send: self._msp_writer_send.clone(),
-            _parser_locked: self._parser_locked.clone(),
+            chunk_recv: self.chunk_recv.clone(),
+            msp_writer_send: self.msp_writer_send.clone(),
+            parser_locked: self.parser_locked.clone(),
             used_size: used_size,
             next_address: 0u32,
             received_address: 0u32,
@@ -289,10 +288,10 @@ impl INavMsp {
             data: vec![],
         };
 
-        self._msp_writer_send.send(packet).await;
+        self.msp_writer_send.send(packet).await;
 
         // TODO: set timeout on recv future::timeout(Duration::from_millis(30), msp_recv.recv()).await;
         // condier using Result like Err() and Ok() here
-        return self._summary_recv.recv().await.unwrap(); // TOOD: we should check the error, not just unwrap????
+        return self.summary_recv.recv().await.unwrap(); // TOOD: we should check the error, not just unwrap????
 	  }
 }
