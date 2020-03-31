@@ -20,6 +20,8 @@ use packed_struct::prelude::*;
 #[macro_use]
 extern crate packed_struct_codegen;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 
 // TODO: move this to multiwii_serial_protocol.rs library
 // TODO: and figure out why we can't call unpack on structs from multiwii library
@@ -52,30 +54,33 @@ pub struct MspDataFlashSummaryReply {
 // }
 
 
-pub struct INavMsp {
-  _parser_locked: Arc<Mutex<MspParser>>,
-  _recv: async_std::sync::Receiver<MspPacket>,
-  _serial: Box<dyn SerialPort>,
+pub struct INavMsp<'a> {
+  _serial: &'a Box<dyn SerialPort>,
 }
 
-impl INavMsp {
-  /// Create a new parserSerialPort
-  pub fn new(mut serial_port: Box<dyn SerialPort>) -> INavMsp {
-        let parser = MspParser::new();
-        let parser_locked = Arc::new(Mutex::new(parser));
-        let parser_locked_clone = parser_locked.clone();
+impl<'a> INavMsp<'a> {
+  // Create a new parserSerialPort
+    pub fn new(serial_port: &mut Box<dyn SerialPort>) -> INavMsp {
+        return INavMsp {
+            _serial: serial_port,
+        };
+	  }
 
-        // Clone the port
-        let serial_port_write = serial_port.try_clone().unwrap();
-
+    fn _process_input(
+        serial: &Box<dyn SerialPort>,
+        parser_locked: Arc<Mutex<MspParser>>,
+    ) -> (async_std::sync::Receiver<MspPacket>, Arc<AtomicBool>) {
+        let mut serial_clone = serial.try_clone().unwrap();
         let (msp_reader_send, msp_reader_recv) = channel(1);
 
+        let should_stop = Arc::new(AtomicBool::new(false));
+        let should_stop_clone = should_stop.clone();
+
         // task 1: read into input channel from serial(reading from serial is blocking)
-        // let read_task =
         task::spawn(async move {
-            loop {
+            while should_stop.load(Ordering::Relaxed) == false {
                 let mut serial_buf: Vec<u8> = vec![0; 1000];
-                match serial_port.read(serial_buf.as_mut_slice()) {
+                match serial_clone.read(serial_buf.as_mut_slice()) {
                     Ok(bytes) => {
                         for n in 0..bytes {
                             match (*parser_locked.lock().await).parse(serial_buf[n]) {
@@ -93,13 +98,10 @@ impl INavMsp {
             }
         });
 
-		    return INavMsp {
-            _parser_locked: parser_locked_clone,
-            _recv: msp_reader_recv,
-			      _serial: serial_port_write,
-		    };
-	}
+        return (msp_reader_recv, should_stop_clone);
+	  }
 
+    // TODO: test the diffrence between mut infront othe parameter name vs after
     fn _send_packet(serial: &mut Box<dyn SerialPort>, packet: &MspPacket) {
         let size = packet.packet_size_bytes();
         let mut output = vec![0; size];
@@ -113,16 +115,23 @@ impl INavMsp {
             .expect("Failed to write to serial port");
     }
 
+    // TODO: stop the reading thread when done receiving 
     // Are we waiting for the header of a brand new packet?
     pub async fn fetch_blackbox(&mut self) -> Result<async_std::sync::Receiver<Vec<u8>>, &str> {
-        let mut serial_clone = (&mut self._serial).try_clone().unwrap();
-        let parser = (&mut self._parser_locked).clone();
+        // let serial = &self._serial;
+        let parser = MspParser::new();
+        let parser_locked = Arc::new(Mutex::new(parser));
+
+        let (msp_recv, should_stop) = INavMsp::_process_input(&self._serial, parser_locked.clone());
+
         // await for summary
-        let summary = INavMsp::_flash_summary(&mut serial_clone, &mut self._recv).await?;
+        let mut serial_clone_1 = (&self._serial).try_clone().unwrap();
+        let summary = INavMsp::_flash_summary(&mut serial_clone_1, &msp_recv).await?;
         let used_size = summary.used_size_bytes;
 
         let (chunk_send, chunk_recv) = channel::<Vec<u8>>(1);
-        let msp_recv = (&mut self._recv).clone();
+        let mut serial_clone = (&self._serial).try_clone().unwrap();
+        // let msp_recv = (&mut recv).clone();
 
         task::spawn(async move {
             let mut next_address = 0u32;
@@ -155,12 +164,13 @@ impl INavMsp {
                             next_address += packet_payload.len() as u32;
 
                             if next_address >= used_size {
+                                should_stop.store(true, Ordering::Relaxed);
                                 break;
                             }
                         }
                     }
                 } else {
-                    (*parser.lock().await).reset();
+                    (*parser_locked.lock().await).reset();
                 }
 
                 let payload = MspDataFlashRead {
@@ -185,12 +195,21 @@ impl INavMsp {
 	  }
 
     pub async fn flash_summary(&mut self) -> Result<MspDataFlashSummaryReply, &'static str> {
-        return INavMsp::_flash_summary(&mut self._serial, &mut self._recv).await;
+        let parser = MspParser::new();
+        let parser_locked = Arc::new(Mutex::new(parser));
+        let mut serial = (&self._serial).try_clone().unwrap();
+
+        let (msp_recv, should_stop) = INavMsp::_process_input(&mut (&self._serial), parser_locked);
+
+        let result = INavMsp::_flash_summary(&mut serial, &msp_recv).await;
+        should_stop.store(true, Ordering::Relaxed);
+
+        return result;
     }
 
     async fn _flash_summary(
         serial: &mut Box<dyn SerialPort>,
-        recv: &mut async_std::sync::Receiver<MspPacket>,
+        recv: &async_std::sync::Receiver<MspPacket>,
     ) -> Result<MspDataFlashSummaryReply, &'static str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_DATAFLASH_SUMMARY as u16,
