@@ -1,25 +1,19 @@
 extern crate alloc;
 extern crate multiwii_serial_protocol;
 extern crate serialport;
-// extern crate serial;
-
-use multiwii_serial_protocol::{MspCommandCode, MspPacket, MspPacketDirection, MspParser};
-use serialport::SerialPort;
-
-// use serial::prelude::*;
-use std::io::prelude::*;
-
-use async_std::sync::{channel, Arc, Mutex, Sender, Receiver};
-use async_std::{io, task};
-
-use async_std::future;
-use std::time::Duration;
-
 extern crate packed_struct;
-use packed_struct::prelude::*;
 #[macro_use]
 extern crate packed_struct_codegen;
 
+use multiwii_serial_protocol::{MspCommandCode, MspPacket, MspPacketDirection, MspParser};
+use serialport::SerialPort;
+use packed_struct::prelude::*;
+
+use async_std::sync::{channel, Arc, Mutex, Sender, Receiver};
+use async_std::{io, task};
+use async_std::future;
+
+use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 
@@ -58,6 +52,73 @@ pub struct MspDataFlashSummaryReply {
 //     pub data: u32,
 // }
 
+
+// TODO: _ indiactes unused, not private, change it protonot( stuff without pub are private)
+pub struct FlashDataFile {
+  _chunk_recv: Receiver<MspDataFlashReply>,
+  _msp_writer_send: Sender<MspPacket>,
+  _parser_locked: Arc<Mutex<MspParser>>,
+  used_size: u32,
+  next_address: u32,
+  // requested_address: u32,
+  received_address: u32,
+}
+
+// TODO: we should return interface that implements async_std::io::Read trait
+// TODO: why not return move the payload vec instead of the io result??
+impl FlashDataFile {
+    pub async fn read_chunk(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.received_address >= self.used_size {
+            return Err(io::Error::new(io::ErrorKind::ConnectionReset, "use after close"));
+        }
+
+        loop {
+            if self.next_address > self.received_address || self.next_address == 0 {
+                let payload = MspDataFlashRead {
+                    read_address: self.next_address,
+                    read_length: 0x1000,
+                };
+                let packed = payload.pack();
+
+                let packet = multiwii_serial_protocol::MspPacket {
+                    cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
+                    direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
+                    data: packed.to_vec(),
+                };
+
+                self._msp_writer_send.send(packet).await;
+            }
+
+            let timeout_res = future::timeout(Duration::from_millis(50), self._chunk_recv.recv()).await;
+
+            // resend the packet
+            if timeout_res.is_ok() {
+                match timeout_res.unwrap() {
+                    None => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
+                    Some(packet) => {
+
+                        if packet.read_address >= self.next_address {
+                            self.received_address = packet.read_address;
+                            self.next_address = packet.read_address + packet.payload.len() as u32;
+                        } else {
+                            continue;
+                        }
+
+
+                        if self.received_address >= self.used_size {
+                            return Ok(0);
+                        }
+
+                        buf[..].copy_from_slice(&packet.payload[..]);
+                        return Ok(packet.payload.len());
+                    }
+                }
+            } else {
+                (*self._parser_locked.lock().await).reset();
+            }
+        }
+    }
+}
 
 pub struct INavMsp {
   _parser_locked: Arc<Mutex<MspParser>>,
@@ -206,57 +267,19 @@ impl INavMsp {
         });
 	  }
 
-    // TODO: start the reading thread and writing thread on on _start_proccess
-    // TODO: we then register channel for each message type prior to start reading
-    // TODO: stop the reading thread when done receiving
-    // Are we waiting for the header of a brand new packet?
-    // This should return file stream and not channel... lol lololo ... lolol...
-    // we should return interface that implements async_std::io::Read trait
-    pub async fn fetch_blackbox(&self) {
+    pub async fn fetch_blackbox(&self) -> FlashDataFile {
         // await for summary
         let summary = self.flash_summary().await;
         let used_size = summary.used_size_bytes;
 
-        let mut next_address = 0u32;
-        loop {
-            let timeout_res = future::timeout(Duration::from_millis(30), self._chunk_recv.recv()).await;
-
-            // resend the packet
-            if timeout_res.is_ok() {
-                match timeout_res.unwrap() {
-                    None => break,
-                    Some(packet) => {
-                        // Verify that the address of the memory returned matches what the caller asked for
-                        if packet.read_address != next_address {
-                            continue
-                        }
-
-                        next_address += packet.payload.len() as u32;
-
-                        if next_address >= used_size {
-                            // should_stop.store(true, Ordering::Relaxed);
-                            break;
-                        }
-                    }
-                }
-            } else {
-                (*self._parser_locked.lock().await).reset();
-            }
-
-            let payload = MspDataFlashRead {
-		            read_address: next_address,
-                read_length: 0x1000,
-	          };
-            let packed = payload.pack();
-
-            let packet = multiwii_serial_protocol::MspPacket {
-		            cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
-		            direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
-		            data: packed.to_vec(),
-	          };
-
-            self._msp_writer_send.send(packet).await;
-        }
+        return FlashDataFile {
+            _chunk_recv: self._chunk_recv.clone(),
+            _msp_writer_send: self._msp_writer_send.clone(),
+            _parser_locked: self._parser_locked.clone(),
+            used_size: used_size,
+            next_address: 0u32,
+            received_address: 0u32,
+        };
 	  }
 
     pub async fn flash_summary(&self) -> MspDataFlashSummaryReply {
@@ -270,6 +293,6 @@ impl INavMsp {
 
         // TODO: set timeout on recv future::timeout(Duration::from_millis(30), msp_recv.recv()).await;
         // condier using Result like Err() and Ok() here
-        return self._summary_recv.recv().await.unwrap();
+        return self._summary_recv.recv().await.unwrap(); // TOOD: we should check the error, not just unwrap????
 	  }
 }
