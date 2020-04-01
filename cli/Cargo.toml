@@ -1,0 +1,18 @@
+[package]
+name = "async-msp-cli"
+version = "0.1.0"
+authors = ["Ilya Guterman <amfernusus@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+multiwii_serial_protocol = { version = "0.1.0", path = "../multiwii_serial_protocol.rs" }
+async-msp-lib = { version = "0.1.0", path = "../async-msp-lib.rs" }
+serialport = "3.3.0"
+packed_struct = "0.3"
+packed_struct_codegen = "0.3"
+
+[dependencies.async-std]
+version = "1.5.0"
+features = ["unstable", "attributes"]
