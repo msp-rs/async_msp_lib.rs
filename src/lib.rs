@@ -266,7 +266,7 @@ impl INavMsp {
         });
 	  }
 
-    pub async fn fetch_blackbox(&self) -> FlashDataFile {
+    pub async fn open_flash_data(&self) -> FlashDataFile {
         // await for summary
         let summary = self.flash_summary().await;
         let used_size = summary.used_size_bytes;
