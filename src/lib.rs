@@ -66,7 +66,7 @@ pub struct FlashDataFile {
 // TODO: we should return interface that implements async_std::io::Read trait
 // TODO: why not return move the payload vec instead of the io result??
 impl FlashDataFile {
-    pub async fn read_chunk(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    pub async fn read_chunk(&mut self) -> io::Result<Vec<u8>> {
         if self.received_address >= self.used_size {
             return Err(io::Error::new(io::ErrorKind::ConnectionReset, "use after close"));
         }
@@ -103,13 +103,13 @@ impl FlashDataFile {
                             continue;
                         }
 
+                        println!("{:?}/{:?}", packet.read_address, self.used_size);
 
                         if self.received_address >= self.used_size {
-                            return Ok(0);
+                            return Ok(vec![]);
                         }
 
-                        buf[..].copy_from_slice(&packet.payload[..]);
-                        return Ok(packet.payload.len());
+                        return Ok(packet.payload);
                     }
                 }
             } else {
