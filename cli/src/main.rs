@@ -28,7 +28,7 @@ async fn main() {
     let summary = inav.flash_summary().await;
     println!("done {:?}", summary);
 
-    let mut flash_data_file = inav.fetch_blackbox().await;
+    let mut flash_data_file = inav.open_flash_data().await;
 
     let f = OpenOptions::new()
         .write(true)
