@@ -269,7 +269,7 @@ impl INavMsp {
     pub async fn open_flash_data(&self) -> FlashDataFile {
         // await for summary
         let summary = self.flash_summary().await;
-        let used_size = summary.used_size_bytes;
+        let used_size = summary.unwrap().used_size_bytes;
 
         return FlashDataFile {
             chunk_recv: self.chunk_recv.clone(),
@@ -281,7 +281,7 @@ impl INavMsp {
         };
 	  }
 
-    pub async fn flash_summary(&self) -> MspDataFlashSummaryReply {
+    pub async fn flash_summary(&self) -> io::Result<MspDataFlashSummaryReply> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_DATAFLASH_SUMMARY as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -290,8 +290,11 @@ impl INavMsp {
 
         self.msp_writer_send.send(packet).await;
 
-        // TODO: set timeout on recv future::timeout(Duration::from_millis(30), msp_recv.recv()).await;
-        // condier using Result like Err() and Ok() here
-        return self.summary_recv.recv().await.unwrap(); // TOOD: we should check the error, not just unwrap????
+        let timeout_res = future::timeout(Duration::from_millis(30), self.summary_recv.recv()).await;
+        if timeout_res.is_ok() {
+            return Ok(timeout_res.unwrap().unwrap());
+        }
+
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for summary response"));
 	  }
 }
