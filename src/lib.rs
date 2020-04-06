@@ -252,7 +252,7 @@ impl INavMsp {
                     Some(packet) => packet,
                 };
 
-                let size = packet.packet_size_bytes();
+                let size = packet.packet_size_bytes_v2();
                 let mut output = vec![0; size];
 
                 packet
