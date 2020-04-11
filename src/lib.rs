@@ -44,8 +44,34 @@ pub struct MspDataFlashSummaryReply {
 }
 
 #[derive(PackedStruct, Debug, Copy, Clone)]
+#[packed_struct(bytes = "4", endian = "lsb", bit_numbering = "msb0")]
+pub struct MspModeRange {
+    pub box_id: u8,
+    pub aux_channel_index: u8,
+    pub start_step: u8,
+    pub end_step: u8,
+}
+
+#[derive(PackedStruct, Debug, Copy, Clone)]
 #[packed_struct(bytes = "5", endian = "lsb", bit_numbering = "msb0")]
 pub struct MspSetModeRange {
+    pub index: u8,
+    #[packed_field(size_bytes="4")]
+    pub mode_range: MspModeRange,
+}
+
+// const MAX_MODE_ACTIVATION_CONDITION_COUNT: u8 = 20u8;
+
+#[derive(PackedStruct, Debug, Copy, Clone)]
+#[packed_struct(endian = "lsb", bit_numbering = "msb0")]
+pub struct MspModeRangesReplay {
+    #[packed_field(element_size_bytes="4")]
+    mode_ranges: [MspModeRange; 20], // 20 is defined as MAX_MODE_ACTIVATION_CONDITION_COUNT
+}
+
+
+#[derive(Debug)]
+pub struct ModeRange {
     pub index: u8,
     pub box_id: u8,
     pub aux_channel_index: u8,
@@ -129,6 +155,8 @@ pub struct INavMsp {
     msp_writer_send: Sender<MspPacket>,
     msp_writer_recv: Receiver<MspPacket>,
 
+    mode_ranges_recv: Receiver<MspModeRangesReplay>,
+    mode_ranges_send: Sender<MspModeRangesReplay>,
     set_mode_range_ack_recv: Receiver<()>,
     set_mode_range_ack_send: Sender<()>,
     summary_recv: Receiver<MspDataFlashSummaryReply>,
@@ -143,6 +171,7 @@ impl INavMsp {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(1);
         let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1);
 
+        let (mode_ranges_send, mode_ranges_recv) = channel::<MspModeRangesReplay>(1);
         let (set_mode_range_ack_send, set_mode_range_ack_recv) = channel::<()>(1);
         let (summary_send, summary_recv) = channel::<MspDataFlashSummaryReply>(1);
         let (chunk_send, chunk_recv) = channel::<MspDataFlashReply>(1);
@@ -157,6 +186,8 @@ impl INavMsp {
             msp_writer_send: msp_writer_send,
             msp_writer_recv: msp_writer_recv,
 
+            mode_ranges_send: mode_ranges_send,
+            mode_ranges_recv: mode_ranges_recv,
             set_mode_range_ack_recv: set_mode_range_ack_recv,
             set_mode_range_ack_send: set_mode_range_ack_send,
             summary_send: summary_send,
@@ -173,6 +204,7 @@ impl INavMsp {
         INavMsp::process_output(serial_clone, self.msp_writer_recv.clone());
         INavMsp::process_route(
             self.msp_reader_recv.clone(),
+            self.mode_ranges_send.clone(),
             self.set_mode_range_ack_send.clone(),
             self.summary_send.clone(),
             self.chunk_send.clone(),
@@ -181,6 +213,7 @@ impl INavMsp {
 
     fn process_route(
         msp_reader_recv: Receiver<MspPacket>,
+        mode_ranges_send: Sender<MspModeRangesReplay>,
         set_mode_range_ack_send: Sender<()>,
         summary_send: Sender<MspDataFlashSummaryReply>,
         chunk_send: Sender<MspDataFlashReply>,
@@ -194,6 +227,11 @@ impl INavMsp {
 
                 if packet.direction != MspPacketDirection::FromFlightController {
                     continue;
+                }
+
+                if packet.cmd == MspCommandCode::MSP_MODE_RANGES as u16 {
+                    let ranges = MspModeRangesReplay::unpack_from_slice(&packet.data).unwrap();
+                    mode_ranges_send.send(ranges).await;
                 }
 
                 if packet.cmd == MspCommandCode::MSP_SET_MODE_RANGE as u16 {
@@ -321,19 +359,16 @@ impl INavMsp {
         return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for summary response"));
 	  }
 
-    pub async fn set_mode_range(&self,
-                                index: u8,
-                                box_id: u8,
-                                aux_channel_index: u8,
-                                start_step: u8,
-                                end_step: u8) -> io::Result<()> {
+    pub async fn set_mode_range(&self, mode: ModeRange) -> io::Result<()> {
 
         let payload = MspSetModeRange {
-            index: index,
-            box_id: box_id,
-            aux_channel_index: aux_channel_index,
-            start_step: start_step,
-            end_step: end_step,
+            index: mode.index,
+            mode_range: MspModeRange {
+                box_id: mode.box_id,
+                aux_channel_index: mode.aux_channel_index,
+                start_step: mode.start_step,
+                end_step: mode.end_step,
+            }
         };
 
         let packet = MspPacket {
@@ -351,6 +386,45 @@ impl INavMsp {
         }
 
         return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set mode range response"));
+	  }
+
+    pub async fn get_mode_ranges(&self) -> io::Result<Vec<ModeRange>> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_MODE_RANGES as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.msp_writer_send.send(packet).await;
+
+        // TODO: we are not sure this ack is for our request, because there is no id for the request
+        // TODO: what if we are reading packet that was sent long time ago
+        // TODO: also currently if no one is reading the channges, we may hang
+
+        let timeout_res = future::timeout(Duration::from_millis(30), self.mode_ranges_recv.recv()).await;
+        if !timeout_res.is_ok() {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set mode range response"));
+        }
+
+        let ranges_replay = timeout_res.unwrap().unwrap();
+        let mut valid_ranges = vec![];
+
+        // TODO: not all 20 ranges will be active, return only the active ranges
+        ranges_replay.mode_ranges.iter().enumerate().fold(&mut valid_ranges, |acc, (i, r)| {
+            if r.start_step != 0 && r.end_step != 0 {
+                acc.push(ModeRange {
+                    index: i as u8,
+                    box_id: r.box_id,
+                    aux_channel_index: r.aux_channel_index,
+                    start_step: r.start_step,
+                    end_step: r.end_step,
+                });
+            }
+
+            return acc;
+        });
+
+        return Ok(valid_ranges);
 	  }
 
 }
