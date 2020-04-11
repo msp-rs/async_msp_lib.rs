@@ -43,15 +43,17 @@ pub struct MspDataFlashSummaryReply {
     pub used_size_bytes: u32,
 }
 
+#[derive(PackedStruct, Debug, Copy, Clone)]
+#[packed_struct(bytes = "5", endian = "lsb", bit_numbering = "msb0")]
+pub struct MspSetModeRange {
+    pub index: u8,
+    pub box_id: u8,
+    pub aux_channel_index: u8,
+    pub start_step: u8,
+    pub end_step: u8,
+}
+
 // TODO: extract this code to rust module(different file)
-
-// #[derive(PackedStruct, Debug, Copy, Clone)]
-// #[packed_struct(bytes = "1", endian = "lsb", bit_numbering = "msb0")]
-// pub struct MspDataFlashReply {
-//     pub reply_address: u32,
-//     pub data: u32,
-// }
-
 
 pub struct FlashDataFile {
     chunk_recv: Receiver<MspDataFlashReply>,
@@ -127,6 +129,8 @@ pub struct INavMsp {
     msp_writer_send: Sender<MspPacket>,
     msp_writer_recv: Receiver<MspPacket>,
 
+    set_mode_range_ack_recv: Receiver<()>,
+    set_mode_range_ack_send: Sender<()>,
     summary_recv: Receiver<MspDataFlashSummaryReply>,
     summary_send: Sender<MspDataFlashSummaryReply>,
     chunk_recv: Receiver<MspDataFlashReply>,
@@ -139,6 +143,7 @@ impl INavMsp {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(1);
         let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1);
 
+        let (set_mode_range_ack_send, set_mode_range_ack_recv) = channel::<()>(1);
         let (summary_send, summary_recv) = channel::<MspDataFlashSummaryReply>(1);
         let (chunk_send, chunk_recv) = channel::<MspDataFlashReply>(1);
 
@@ -152,6 +157,8 @@ impl INavMsp {
             msp_writer_send: msp_writer_send,
             msp_writer_recv: msp_writer_recv,
 
+            set_mode_range_ack_recv: set_mode_range_ack_recv,
+            set_mode_range_ack_send: set_mode_range_ack_send,
             summary_send: summary_send,
             summary_recv: summary_recv,
             chunk_send: chunk_send,
@@ -166,6 +173,7 @@ impl INavMsp {
         INavMsp::process_output(serial_clone, self.msp_writer_recv.clone());
         INavMsp::process_route(
             self.msp_reader_recv.clone(),
+            self.set_mode_range_ack_send.clone(),
             self.summary_send.clone(),
             self.chunk_send.clone(),
         );
@@ -173,6 +181,7 @@ impl INavMsp {
 
     fn process_route(
         msp_reader_recv: Receiver<MspPacket>,
+        set_mode_range_ack_send: Sender<()>,
         summary_send: Sender<MspDataFlashSummaryReply>,
         chunk_send: Sender<MspDataFlashReply>,
     ) {
@@ -182,6 +191,15 @@ impl INavMsp {
                     None => break,
                     Some(packet) => packet,
                 };
+
+                if packet.direction != MspPacketDirection::FromFlightController {
+                    continue;
+                }
+
+                if packet.cmd == MspCommandCode::MSP_SET_MODE_RANGE as u16 {
+                    // packet data should be empty, so just signal ack is received
+                    set_mode_range_ack_send.send(()).await;
+                }
 
                 if packet.cmd == MspCommandCode::MSP_DATAFLASH_SUMMARY as u16 {
                     let summary = MspDataFlashSummaryReply::unpack_from_slice(&packet.data).unwrap();
@@ -203,6 +221,9 @@ impl INavMsp {
                     };
                     chunk_send.send(chunk).await;
                 }
+
+                // TODO: create debug flag for additional print on demand
+                // println!("{:?}", packet);
             }
         });
     }
@@ -266,6 +287,8 @@ impl INavMsp {
         });
 	  }
 
+    // TODO: because this is a serial protocol, we cannot allow two reads of the file at the same time.
+    //       so throw error, if this function is called while another file is open already
     pub async fn open_flash_data(&self) -> FlashDataFile {
         // await for summary
         let summary = self.flash_summary().await;
@@ -297,4 +320,37 @@ impl INavMsp {
 
         return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for summary response"));
 	  }
+
+    pub async fn set_mode_range(&self,
+                                index: u8,
+                                box_id: u8,
+                                aux_channel_index: u8,
+                                start_step: u8,
+                                end_step: u8) -> io::Result<()> {
+
+        let payload = MspSetModeRange {
+            index: index,
+            box_id: box_id,
+            aux_channel_index: aux_channel_index,
+            start_step: start_step,
+            end_step: end_step,
+        };
+
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_SET_MODE_RANGE as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: payload.pack().to_vec(),
+        };
+
+        self.msp_writer_send.send(packet).await;
+
+        // TODO: we are not sure this ack is for our request, because there is no id for the request
+        let timeout_res = future::timeout(Duration::from_millis(30), self.set_mode_range_ack_recv.recv()).await;
+        if timeout_res.is_ok() {
+            return Ok(timeout_res.unwrap().unwrap());
+        }
+
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set mode range response"));
+	  }
+
 }
