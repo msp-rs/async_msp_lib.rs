@@ -22,13 +22,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[derive(PackedStruct, Debug, Copy, Clone)]
 #[packed_struct(bytes = "6", endian = "lsb", bit_numbering = "msb0")]
 pub struct MspDataFlashRead {
-  pub read_address: u32,
-  pub read_length: u16,
+    pub read_address: u32,
+    pub read_length: u16,
 }
 
 pub struct MspDataFlashReply {
-  pub read_address: u32,
-  pub payload: Vec<u8>,
+    pub read_address: u32,
+    pub payload: Vec<u8>,
 }
 
 #[derive(PackedStruct, Debug, Copy, Clone)]
@@ -54,13 +54,13 @@ pub struct MspDataFlashSummaryReply {
 
 
 pub struct FlashDataFile {
-  chunk_recv: Receiver<MspDataFlashReply>,
-  msp_writer_send: Sender<MspPacket>,
-  parser_locked: Arc<Mutex<MspParser>>,
-  used_size: u32,
-  next_address: u32,
-  // requested_address: u32,
-  received_address: u32,
+    chunk_recv: Receiver<MspDataFlashReply>,
+    msp_writer_send: Sender<MspPacket>,
+    parser_locked: Arc<Mutex<MspParser>>,
+    used_size: u32,
+    next_address: u32,
+    // requested_address: u32,
+    received_address: u32,
 }
 
 // TODO: we should return interface that implements async_std::io::Read trait
@@ -120,21 +120,21 @@ impl FlashDataFile {
 }
 
 pub struct INavMsp {
-  parser_locked: Arc<Mutex<MspParser>>,
+    parser_locked: Arc<Mutex<MspParser>>,
 
-  msp_reader_send: Sender<MspPacket>,
-  msp_reader_recv: Receiver<MspPacket>,
-  msp_writer_send: Sender<MspPacket>,
-  msp_writer_recv: Receiver<MspPacket>,
+    msp_reader_send: Sender<MspPacket>,
+    msp_reader_recv: Receiver<MspPacket>,
+    msp_writer_send: Sender<MspPacket>,
+    msp_writer_recv: Receiver<MspPacket>,
 
-  summary_recv: Receiver<MspDataFlashSummaryReply>,
-  summary_send: Sender<MspDataFlashSummaryReply>,
-  chunk_recv: Receiver<MspDataFlashReply>,
-  chunk_send: Sender<MspDataFlashReply>,
+    summary_recv: Receiver<MspDataFlashSummaryReply>,
+    summary_send: Sender<MspDataFlashSummaryReply>,
+    chunk_recv: Receiver<MspDataFlashReply>,
+    chunk_send: Sender<MspDataFlashReply>,
 }
 
 impl INavMsp {
-  // Create a new parserSerialPort
+    // Create a new parserSerialPort
     pub fn new() -> INavMsp {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(1);
         let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1);
