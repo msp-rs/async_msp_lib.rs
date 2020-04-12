@@ -335,6 +335,7 @@ impl INavMsp {
 
     // TODO: because this is a serial protocol, we cannot allow two reads of the file at the same time.
     //       so throw error, if this function is called while another file is open already
+    /// altought slower then read_flash_data, its a safe data, the reads are happening serialy
     pub async fn open_flash_data(&self) -> FlashDataFile {
         // await for summary
         let summary = self.flash_summary().await;
@@ -348,6 +349,86 @@ impl INavMsp {
             next_address: 0u32,
             received_address: 0u32,
         };
+	  }
+
+    // TODO: pass some sort of callback function
+    /// coccurent unordered data flash reading, this method assumes data is organazised into equal(except last one) chunks of data
+    pub async fn read_flash_data(&self, chunk_size: usize, callback: fn(chunk: usize, total: usize)) -> io::Result<Vec<u8>> {
+        // await for summary
+        let summary = self.flash_summary().await;
+        let used_size = summary.unwrap().used_size_bytes as usize;
+
+        // let chunk_size = 0x800u32;
+        // let chunk_size = 0x1000u32; // no point going more then this size because inav won't return bigger chunk
+        // let chunk_size = 0x4000u32;
+        // let block_size = 4096; // number of chunks to read
+
+        // TODO, fix bug: round up here
+        let blocks_count = used_size / chunk_size; // number of chunks to read
+
+        let mut expected_address = vec![];
+
+
+        for x in (0..blocks_count * chunk_size).step_by(chunk_size as usize) {
+            &expected_address.push(x);
+        }
+
+        println!("expected_address: {:?}", &expected_address.len());
+
+        let mut accumulated_payload = vec![vec![]; blocks_count as usize];
+        loop {
+            for addr in &expected_address {
+                let payload = MspDataFlashRead {
+                    read_address: *addr as u32,
+                    read_length: chunk_size as u16,
+                };
+                let packed = payload.pack();
+
+                let packet = multiwii_serial_protocol::MspPacket {
+                    cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
+                    direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
+                    data: packed.to_vec(),
+                };
+
+                self.msp_writer_send.send(packet).await;
+            }
+
+            loop {
+                // TODO: maybe let the caller handle the timeout?
+                let timeout_res = future::timeout(Duration::from_millis(500), self.chunk_recv.recv()).await;
+
+                if timeout_res.is_ok() {
+                    match timeout_res.unwrap() {
+                        None => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
+                        Some(packet) => {
+                            let idx = match expected_address.binary_search(&(packet.read_address as usize)) {
+                                Ok(idx) => idx,
+                                Err(_) => continue,
+                            };
+
+                            // last element can be less then chunk size
+                            // assert_eq!(*&chunk_size as usize, packet.payload.len());
+
+                            let insert_location = &(packet.read_address as usize) / &chunk_size;
+                            (&mut accumulated_payload)[insert_location as usize] = packet.payload;
+                            expected_address.remove(idx);
+
+                            callback(used_size - expected_address.len() * chunk_size, used_size);
+
+                            if expected_address.is_empty() {
+                                let buff = accumulated_payload.iter().cloned().flatten().collect::<Vec<u8>>();
+                                // println!("return {:?}", buff.len());
+                                return Ok(buff);
+                            }
+                        }
+                    }
+                } else {
+                    (*self.parser_locked.lock().await).reset();
+                    // println!("timeout, address left {:?}", expected_address);
+                    break;
+                }
+            }
+        }
 	  }
 
     pub async fn flash_summary(&self) -> io::Result<MspDataFlashSummaryReply> {
