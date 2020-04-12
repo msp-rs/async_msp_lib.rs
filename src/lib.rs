@@ -168,13 +168,13 @@ pub struct INavMsp {
 impl INavMsp {
     // Create a new parserSerialPort
     pub fn new() -> INavMsp {
-        let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(1);
-        let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1);
+        let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
+        let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(4096);
 
-        let (mode_ranges_send, mode_ranges_recv) = channel::<MspModeRangesReplay>(1);
-        let (set_mode_range_ack_send, set_mode_range_ack_recv) = channel::<()>(1);
-        let (summary_send, summary_recv) = channel::<MspDataFlashSummaryReply>(1);
-        let (chunk_send, chunk_recv) = channel::<MspDataFlashReply>(1);
+        let (mode_ranges_send, mode_ranges_recv) = channel::<MspModeRangesReplay>(100);
+        let (set_mode_range_ack_send, set_mode_range_ack_recv) = channel::<()>(100);
+        let (summary_send, summary_recv) = channel::<MspDataFlashSummaryReply>(100);
+        let (chunk_send, chunk_recv) = channel::<MspDataFlashReply>(4096);
 
         let parser = MspParser::new();
         let parser_locked = Arc::new(Mutex::new(parser));
@@ -359,7 +359,7 @@ impl INavMsp {
 
         self.msp_writer_send.send(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(30), self.summary_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(500), self.summary_recv.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
         }
@@ -388,7 +388,7 @@ impl INavMsp {
         self.msp_writer_send.send(packet).await;
 
         // TODO: we are not sure this ack is for our request, because there is no id for the request
-        let timeout_res = future::timeout(Duration::from_millis(30), self.set_mode_range_ack_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_mode_range_ack_recv.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
         }
@@ -409,9 +409,9 @@ impl INavMsp {
         // TODO: what if we are reading packet that was sent long time ago
         // TODO: also currently if no one is reading the channges, we may hang
 
-        let timeout_res = future::timeout(Duration::from_millis(30), self.mode_ranges_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(5000), self.mode_ranges_recv.recv()).await;
         if !timeout_res.is_ok() {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set mode range response"));
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get mode ranges response"));
         }
 
         let ranges_replay = timeout_res.unwrap().unwrap();
