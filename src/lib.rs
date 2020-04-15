@@ -80,6 +80,41 @@ pub struct ModeRange {
     pub end_step: u8,
 }
 
+#[derive(PackedStruct, Debug, Copy, Clone)]
+#[packed_struct(bytes = "8", endian = "lsb", bit_numbering = "msb0")]
+pub struct MspMotorMixer {
+    pub throttle: u16,
+    pub roll: u16,
+    pub pitch: u16,
+    pub yaw: u16,
+}
+
+#[derive(PackedStruct, Debug, Copy, Clone)]
+#[packed_struct(bytes = "9", endian = "lsb", bit_numbering = "msb0")]
+pub struct MspSetMotorMixer {
+    pub index: u8,
+    #[packed_field(size_bytes="8")]
+    pub motor_mixer: MspMotorMixer,
+}
+
+// const MAX_MODE_ACTIVATION_CONDITION_COUNT: u8 = 20u8;
+
+#[derive(PackedStruct, Debug, Copy, Clone)]
+#[packed_struct(endian = "lsb", bit_numbering = "msb0")]
+pub struct MspMotorMixersReplay {
+    #[packed_field(element_size_bytes="8")]
+    mode_ranges: [MspMotorMixer; 12], // 12 is defined as MAX_SUPPORTED_MOTORS
+}
+
+#[derive(Debug)]
+pub struct MotorMixer {
+    pub index: u8,
+    pub throttle: u16,
+    pub roll: u16,
+    pub pitch: u16,
+    pub yaw: u16,
+}
+
 // TODO: extract this code to rust module(different file)
 
 pub struct FlashDataFile {
@@ -154,6 +189,10 @@ pub struct INavMsp {
     mode_ranges_send: Sender<MspModeRangesReplay>,
     set_mode_range_ack_recv: Receiver<()>,
     set_mode_range_ack_send: Sender<()>,
+    motor_mixers_recv: Receiver<MspMotorMixersReplay>,
+    motor_mixers_send: Sender<MspMotorMixersReplay>,
+    set_motor_mixer_ack_recv: Receiver<()>,
+    set_motor_mixer_ack_send: Sender<()>,
     summary_recv: Receiver<MspDataFlashSummaryReply>,
     summary_send: Sender<MspDataFlashSummaryReply>,
     chunk_recv: Receiver<MspDataFlashReply>,
@@ -167,6 +206,8 @@ impl INavMsp {
 
         let (mode_ranges_send, mode_ranges_recv) = channel::<MspModeRangesReplay>(100);
         let (set_mode_range_ack_send, set_mode_range_ack_recv) = channel::<()>(100);
+        let (motor_mixers_send, motor_mixers_recv) = channel::<MspMotorMixersReplay>(100);
+        let (set_motor_mixer_ack_send, set_motor_mixer_ack_recv) = channel::<()>(100);
         let (summary_send, summary_recv) = channel::<MspDataFlashSummaryReply>(100);
         let (chunk_send, chunk_recv) = channel::<MspDataFlashReply>(4096);
 
@@ -177,6 +218,10 @@ impl INavMsp {
             mode_ranges_recv: mode_ranges_recv,
             set_mode_range_ack_recv: set_mode_range_ack_recv,
             set_mode_range_ack_send: set_mode_range_ack_send,
+            motor_mixers_send: motor_mixers_send,
+            motor_mixers_recv: motor_mixers_recv,
+            set_motor_mixer_ack_recv: set_motor_mixer_ack_recv,
+            set_motor_mixer_ack_send: set_motor_mixer_ack_send,
             summary_send: summary_send,
             summary_recv: summary_recv,
             chunk_send: chunk_send,
@@ -192,6 +237,8 @@ impl INavMsp {
             self.core.clone(),
             self.mode_ranges_send.clone(),
             self.set_mode_range_ack_send.clone(),
+            self.motor_mixers_send.clone(),
+            self.set_motor_mixer_ack_send.clone(),
             self.summary_send.clone(),
             self.chunk_send.clone(),
         );
@@ -201,6 +248,8 @@ impl INavMsp {
         core: core::Core,
         mode_ranges_send: Sender<MspModeRangesReplay>,
         set_mode_range_ack_send: Sender<()>,
+        motor_mixers_send: Sender<MspMotorMixersReplay>,
+        set_motor_mixer_ack_send: Sender<()>,
         summary_send: Sender<MspDataFlashSummaryReply>,
         chunk_send: Sender<MspDataFlashReply>,
     ) {
@@ -223,6 +272,16 @@ impl INavMsp {
                 if packet.cmd == MspCommandCode::MSP_SET_MODE_RANGE as u16 {
                     // packet data should be empty, so just signal ack is received
                     set_mode_range_ack_send.send(()).await;
+                }
+
+                if packet.cmd == MspCommandCode::MSP2_MOTOR_MIXER as u16 {
+                    let mixers = MspMotorMixersReplay::unpack_from_slice(&packet.data).unwrap();
+                    motor_mixers_send.send(mixers).await;
+                }
+
+                if packet.cmd == MspCommandCode::MSP2_SET_MOTOR_MIXER as u16 {
+                    // packet data should be empty, so just signal ack is received
+                    set_motor_mixer_ack_send.send(()).await;
                 }
 
                 if packet.cmd == MspCommandCode::MSP_DATAFLASH_SUMMARY as u16 {
@@ -435,6 +494,74 @@ impl INavMsp {
         });
 
         return Ok(valid_ranges);
+	  }
+
+    pub async fn set_motor_mixer(&self, mmix: MotorMixer) -> io::Result<()> {
+
+        let payload = MspSetMotorMixer {
+            index: mmix.index,
+            motor_mixer: MspMotorMixer {
+                throttle: mmix.throttle,
+                roll: mmix.roll,
+                pitch: mmix.pitch,
+                yaw: mmix.yaw,
+            }
+        };
+
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_SET_MOTOR_MIXER as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: payload.pack().to_vec(),
+        };
+
+        self.core.write(packet).await;
+
+        // TODO: we are not sure this ack is for our request, because there is no id for the request
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_motor_mixer_ack_recv.recv()).await;
+        if timeout_res.is_ok() {
+            return Ok(timeout_res.unwrap().unwrap());
+        }
+
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set mode range response"));
+	  }
+
+    pub async fn get_motor_mixers(&self) -> io::Result<Vec<MotorMixer>> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_MOTOR_MIXER as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.core.write(packet).await;
+
+        // TODO: we are not sure this ack is for our request, because there is no id for the request, unlike mavlink packet
+        // TODO: what if we are reading packet that was sent long time ago
+
+        let timeout_res = future::timeout(Duration::from_millis(5000), self.motor_mixers_recv.recv()).await;
+        if !timeout_res.is_ok() {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get motor mixers response"));
+        }
+
+        let mmix_replay = timeout_res.unwrap().unwrap();
+
+        let mut valid_mmix = vec![];
+
+        // TODO: not all 20 ranges will be active, return only the active ranges
+        mmix_replay.mode_ranges.iter().enumerate().fold(&mut valid_mmix, |acc, (i, m)| {
+            if m.throttle != 0 {
+                acc.push(MotorMixer {
+                    index: i as u8,
+                    throttle: m.throttle,
+                    roll: m.roll,
+                    pitch: m.pitch,
+                    yaw: m.yaw,
+                });
+            }
+
+            return acc;
+        });
+
+        return Ok(valid_mmix);
 	  }
 
 }
