@@ -5,16 +5,17 @@ extern crate packed_struct;
 #[macro_use]
 extern crate packed_struct_codegen;
 
-use multiwii_serial_protocol::{MspCommandCode, MspPacket, MspPacketDirection, MspParser};
+use multiwii_serial_protocol::{MspCommandCode, MspPacket, MspPacketDirection};
 use serialport::SerialPort;
 use packed_struct::prelude::*;
 
-use async_std::sync::{channel, Arc, Mutex, Sender, Receiver};
+use async_std::sync::{channel, Sender, Receiver};
 use async_std::{io, task};
 use async_std::future;
 
 use std::time::Duration;
-use std::sync::atomic::{AtomicBool, Ordering};
+
+mod core;
 
 
 // TODO: move this to multiwii_serial_protocol.rs library
@@ -82,9 +83,8 @@ pub struct ModeRange {
 // TODO: extract this code to rust module(different file)
 
 pub struct FlashDataFile {
+    core: core::Core,
     chunk_recv: Receiver<MspDataFlashReply>,
-    msp_writer_send: Sender<MspPacket>,
-    parser_locked: Arc<Mutex<MspParser>>,
     used_size: u32,
     next_address: u32,
     // requested_address: u32,
@@ -113,7 +113,7 @@ impl FlashDataFile {
                     data: packed.to_vec(),
                 };
 
-                self.msp_writer_send.send(packet).await;
+                self.core.write(packet).await;
             }
 
             let timeout_res = future::timeout(Duration::from_millis(50), self.chunk_recv.recv()).await;
@@ -141,19 +141,14 @@ impl FlashDataFile {
                     }
                 }
             } else {
-                (*self.parser_locked.lock().await).reset();
+                self.core.reset_parser().await;
             }
         }
     }
 }
 
 pub struct INavMsp {
-    parser_locked: Arc<Mutex<MspParser>>,
-
-    msp_reader_send: Sender<MspPacket>,
-    msp_reader_recv: Receiver<MspPacket>,
-    msp_writer_send: Sender<MspPacket>,
-    msp_writer_recv: Receiver<MspPacket>,
+    core: core::Core,
 
     mode_ranges_recv: Receiver<MspModeRangesReplay>,
     mode_ranges_send: Sender<MspModeRangesReplay>,
@@ -168,23 +163,15 @@ pub struct INavMsp {
 impl INavMsp {
     // Create a new parserSerialPort
     pub fn new() -> INavMsp {
-        let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
-        let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(4096);
+        let core = core::Core::new();
 
         let (mode_ranges_send, mode_ranges_recv) = channel::<MspModeRangesReplay>(100);
         let (set_mode_range_ack_send, set_mode_range_ack_recv) = channel::<()>(100);
         let (summary_send, summary_recv) = channel::<MspDataFlashSummaryReply>(100);
         let (chunk_send, chunk_recv) = channel::<MspDataFlashReply>(4096);
 
-        let parser = MspParser::new();
-        let parser_locked = Arc::new(Mutex::new(parser));
-
         return INavMsp {
-            parser_locked: parser_locked,
-            msp_reader_send: msp_reader_send,
-            msp_reader_recv: msp_reader_recv,
-            msp_writer_send: msp_writer_send,
-            msp_writer_recv: msp_writer_recv,
+            core: core,
 
             mode_ranges_send: mode_ranges_send,
             mode_ranges_recv: mode_ranges_recv,
@@ -197,13 +184,12 @@ impl INavMsp {
         };
 	  }
 
+    // TODO: If serial-port rs supports standard read write interface we should use this instead of seril explocitly
     pub fn start(&self, serial: Box<dyn SerialPort>) {
-        let serial_clone = serial.try_clone().unwrap();
+        &self.core.start(serial);
 
-        INavMsp::process_input(serial, self.parser_locked.clone(), self.msp_reader_send.clone());
-        INavMsp::process_output(serial_clone, self.msp_writer_recv.clone());
         INavMsp::process_route(
-            self.msp_reader_recv.clone(),
+            self.core.clone(),
             self.mode_ranges_send.clone(),
             self.set_mode_range_ack_send.clone(),
             self.summary_send.clone(),
@@ -212,7 +198,7 @@ impl INavMsp {
     }
 
     fn process_route(
-        msp_reader_recv: Receiver<MspPacket>,
+        core: core::Core,
         mode_ranges_send: Sender<MspModeRangesReplay>,
         set_mode_range_ack_send: Sender<()>,
         summary_send: Sender<MspDataFlashSummaryReply>,
@@ -220,7 +206,7 @@ impl INavMsp {
     ) {
         task::spawn(async move {
             loop {
-                let packet = match msp_reader_recv.recv().await {
+                let packet = match core.read().await {
                     None => break,
                     Some(packet) => packet,
                 };
@@ -266,73 +252,6 @@ impl INavMsp {
         });
     }
 
-    // TODO: return joinhandler, so we can stop the tasks on drop
-    fn process_input(
-        mut serial: Box<dyn SerialPort>,
-        parser_locked: Arc<Mutex<MspParser>>,
-        msp_reader_send: Sender<MspPacket>
-    ) -> Arc<AtomicBool> {
-        let should_stop = Arc::new(AtomicBool::new(false));
-        let should_stop_clone = should_stop.clone();
-
-        // task 1: read into input channel from serial(reading from serial is blocking)
-        task::spawn(async move {
-            while should_stop.load(Ordering::Relaxed) == false {
-                let mut serial_buf: Vec<u8> = vec![0; 1000];
-                match serial.read(serial_buf.as_mut_slice()) {
-                    Ok(bytes) => {
-                        for n in 0..bytes {
-                            match (*parser_locked.lock().await).parse(serial_buf[n]) {
-                                Ok(Some(p)) => {
-                                    msp_reader_send.send(p).await
-                                },
-                                Err(e) => eprintln!("bad crc {:?}", e),
-                                Ok(None) => ()
-                            }
-                        }
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => task::yield_now().await,
-                    Err(e) => eprintln!("{:?}", e),
-                }
-            }
-        });
-        return should_stop_clone;
-	  }
-
-    // TODO: return joinhandler, so we can stop the tasks on drop
-    fn process_output(
-        mut serial: Box<dyn SerialPort>,
-        msp_writer_recv: Receiver<MspPacket>,
-    ) {
-        task::spawn(async move {
-            loop {
-                let packet = match msp_writer_recv.recv().await {
-                    None => break,
-                    Some(packet) => packet,
-                };
-
-                let size = packet.packet_size_bytes_v2();
-                let mut output = vec![0; size];
-
-                packet
-                    .serialize_v2(&mut output)
-                    .expect("Failed to serialize");
-
-                // because inav doesn't support uart flow control, we simply try write untill success
-                loop {
-                    match serial.write(&output) {
-                        Ok(_) => break,
-                        Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
-                            // controller is busy/serial buffer is full, sleep and attempt write again
-                            task::sleep(Duration::from_millis(1)).await;
-                        }
-                        Err(e) => eprintln!("failed to write{:?}", e),
-                    }
-                }
-            }
-        });
-	  }
-
     // TODO: because this is a serial protocol, we cannot allow two reads of the file at the same time.
     //       so throw error, if this function is called while another file is open already
     /// altought slower then read_flash_data, its a safe data, the reads are happening serialy
@@ -342,16 +261,18 @@ impl INavMsp {
         let used_size = summary.unwrap().used_size_bytes;
 
         return FlashDataFile {
+            core: self.core.clone(),
             chunk_recv: self.chunk_recv.clone(),
-            msp_writer_send: self.msp_writer_send.clone(),
-            parser_locked: self.parser_locked.clone(),
             used_size: used_size,
             next_address: 0u32,
             received_address: 0u32,
         };
 	  }
 
-    // TODO: pass some sort of callback function
+    // TODO: use https://docs.rs/async-std/1.5.0/async_std/io/struct.Cursor.html to write unordered file stream,
+    // TODO: move blackbox to sibling module
+    // buffer all reads into channel and when function is called receive from that channel
+    // so once the file is open, the reading loop starts, and new chunks are pushed into channel and fetched once the read function called on the returned file descriptor
     /// coccurent unordered data flash reading, this method assumes data is organazised into equal(except last one) chunks of data
     pub async fn read_flash_data(&self, chunk_size: usize, callback: fn(chunk: usize, total: usize)) -> io::Result<Vec<u8>> {
         // await for summary
@@ -390,7 +311,7 @@ impl INavMsp {
                     data: packed.to_vec(),
                 };
 
-                self.msp_writer_send.send(packet).await;
+                self.core.write(packet).await;
             }
 
             loop {
@@ -423,7 +344,7 @@ impl INavMsp {
                         }
                     }
                 } else {
-                    (*self.parser_locked.lock().await).reset();
+                    self.core.reset_parser().await;
                     // println!("timeout, address left {:?}", expected_address);
                     break;
                 }
@@ -438,7 +359,7 @@ impl INavMsp {
             data: vec![],
         };
 
-        self.msp_writer_send.send(packet).await;
+        self.core.write(packet).await;
 
         let timeout_res = future::timeout(Duration::from_millis(500), self.summary_recv.recv()).await;
         if timeout_res.is_ok() {
@@ -466,7 +387,7 @@ impl INavMsp {
             data: payload.pack().to_vec(),
         };
 
-        self.msp_writer_send.send(packet).await;
+        self.core.write(packet).await;
 
         // TODO: we are not sure this ack is for our request, because there is no id for the request
         let timeout_res = future::timeout(Duration::from_millis(500), self.set_mode_range_ack_recv.recv()).await;
@@ -484,7 +405,7 @@ impl INavMsp {
             data: vec![],
         };
 
-        self.msp_writer_send.send(packet).await;
+        self.core.write(packet).await;
 
         // TODO: we are not sure this ack is for our request, because there is no id for the request
         // TODO: what if we are reading packet that was sent long time ago
