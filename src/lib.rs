@@ -159,7 +159,7 @@ pub struct MspOsdConfigsReplay {
     pub osd_support: u8,
     #[packed_field(size_bytes="13")]
     pub config: OsdConfig,
-    // TODO: this field should be dynamic size
+    // TODO: this field should be dynamic size, TOOD: read into vector instead of of this shit
     #[packed_field(element_size_bytes="2")]
     pub item_positions: [OsdItemPosition; 117], // OSD_ITEM_COUNT is 106.. with xtend extension is 117 but can be extended to be more
 }
@@ -170,6 +170,18 @@ pub struct OsdSettings {
     pub config: OsdConfig,
     pub item_positions: Vec<OsdItemPosition>,
 }
+
+#[derive(PackedStruct, Debug, Copy, Clone)]
+#[packed_struct(endian = "lsb", bit_numbering = "msb0")]
+pub struct SerialSetting {
+    pub index: u8,
+    pub function_mask: u32,
+    pub msp_baudrate_index: u8,
+    pub gps_baudrate_index: u8,
+    pub telemetry_baudrate_index: u8,
+    pub peripheral_baudrate_index: u8,
+}
+
 
 // TODO: extract this code to rust module(different file)
 
@@ -259,6 +271,12 @@ pub struct INavMsp {
     set_osd_config_ack_send: Sender<()>,
 
 
+    serial_settings_recv: Receiver<Vec<SerialSetting>>,
+    serial_settings_send: Sender<Vec<SerialSetting>>,
+    set_serial_settings_ack_recv: Receiver<()>,
+    set_serial_settings_ack_send: Sender<()>,
+
+
     summary_recv: Receiver<MspDataFlashSummaryReply>,
     summary_send: Sender<MspDataFlashSummaryReply>,
     chunk_recv: Receiver<MspDataFlashReply>,
@@ -278,6 +296,9 @@ impl INavMsp {
 
         let (osd_configs_send, osd_configs_recv) = channel::<MspOsdConfigsReplay>(100);
         let (set_osd_config_ack_send, set_osd_config_ack_recv) = channel::<()>(100);
+
+        let (serial_settings_send, serial_settings_recv) = channel::<Vec<SerialSetting>>(100);
+        let (set_serial_settings_ack_send, set_serial_settings_ack_recv) = channel::<()>(100);
 
         let (summary_send, summary_recv) = channel::<MspDataFlashSummaryReply>(100);
         let (chunk_send, chunk_recv) = channel::<MspDataFlashReply>(4096);
@@ -303,6 +324,12 @@ impl INavMsp {
             set_osd_config_ack_send: set_osd_config_ack_send,
 
 
+            serial_settings_send: serial_settings_send,
+            serial_settings_recv: serial_settings_recv,
+            set_serial_settings_ack_recv: set_serial_settings_ack_recv,
+            set_serial_settings_ack_send: set_serial_settings_ack_send,
+
+
             summary_send: summary_send,
             summary_recv: summary_recv,
             chunk_send: chunk_send,
@@ -322,6 +349,8 @@ impl INavMsp {
             self.set_motor_mixer_ack_send.clone(),
             self.osd_configs_send.clone(),
             self.set_osd_config_ack_send.clone(),
+            self.serial_settings_send.clone(),
+            self.set_serial_settings_ack_send.clone(),
             self.summary_send.clone(),
             self.chunk_send.clone(),
         );
@@ -335,6 +364,8 @@ impl INavMsp {
         set_motor_mixer_ack_send: Sender<()>,
         osd_configs_send: Sender<MspOsdConfigsReplay>,
         set_osd_config_ack_send: Sender<()>,
+        serial_settings_send: Sender<Vec<SerialSetting>>,
+        set_serial_settings_ack_send: Sender<()>,
         summary_send: Sender<MspDataFlashSummaryReply>,
         chunk_send: Sender<MspDataFlashReply>,
     ) {
@@ -378,6 +409,24 @@ impl INavMsp {
                     // packet data should be empty, so just signal ack is received
                     set_osd_config_ack_send.send(()).await;
                 }
+
+                if packet.cmd == MspCommandCode::MSP2_SERIAL_CONFIG as u16 {
+                    let mut serials = vec![];
+                    let len = SerialSetting::packed_bytes();
+
+                    for i in (0..packet.data.len()).step_by(len) {
+                        let serial_setting = SerialSetting::unpack_from_slice(&packet.data[i..i+len]).unwrap();
+                        serials.push(serial_setting);
+                    }
+
+                    serial_settings_send.send(serials).await;
+                }
+
+                if packet.cmd == MspCommandCode::MSP2_SET_SERIAL_CONFIG as u16 {
+                    // packet data should be empty, so just signal ack is received
+                    set_serial_settings_ack_send.send(()).await;
+                }
+
 
                 if packet.cmd == MspCommandCode::MSP_DATAFLASH_SUMMARY as u16 {
                     let summary = MspDataFlashSummaryReply::unpack_from_slice(&packet.data).unwrap();
@@ -682,6 +731,7 @@ impl INavMsp {
         return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set osd layout response"));
 
     }
+
     pub async fn set_osd_config(&self, config: OsdConfig) -> io::Result<()> {
         // if -1 will set different kinds of configurations else the laytout id
         // but when fetching it always returns everything with correct osd_support
@@ -734,6 +784,57 @@ impl INavMsp {
         // TODO: how do we distinguish between set layouts and unset
 
         return Ok(osd_settings);
+	  }
+
+    pub async fn set_serial_settings(&self, serials: Vec<SerialSetting>) -> io::Result<()> {
+        let payload = serials.iter().flat_map(|s| s.pack().to_vec()).collect();
+
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_SET_SERIAL_CONFIG as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: payload,
+        };
+
+        self.core.write(packet).await;
+
+        // TODO: we are not sure this ack is for our request, because there is no id for the request
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_serial_settings_ack_recv.recv()).await;
+        if timeout_res.is_ok() {
+            return Ok(timeout_res.unwrap().unwrap());
+        }
+
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set serial settings response"));
+	  }
+
+    pub async fn get_serial_settings(&self) -> io::Result<Vec<SerialSetting>> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_SERIAL_CONFIG as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.core.write(packet).await;
+
+        let timeout_res = future::timeout(Duration::from_millis(5000), self.serial_settings_recv.recv()).await;
+        if !timeout_res.is_ok() {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get serial settings response"));
+        }
+
+        let serials_replay = timeout_res.unwrap().unwrap();
+
+        let mut valid_serials = vec![];
+
+        // TODO: not all serials will be active, return only the active ranges
+        serials_replay.iter().fold(&mut valid_serials, |acc, s| {
+            if s.index != 0 {
+                acc.push(*s);
+            }
+
+            return acc;
+        });
+
+        return Ok(valid_serials);
+
 	  }
 
 }
