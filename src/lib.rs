@@ -130,8 +130,8 @@ pub struct OsdConfig {
 
 #[derive(PackedStruct, Debug, Copy, Clone)]
 #[packed_struct(bytes = "1", endian = "lsb", bit_numbering = "msb0")]
-pub struct MspSetOsdConfig {
-    pub item_index: u8, // should be -1
+pub struct MspSetGetOsdConfig {
+    pub item_index: u8,
     #[packed_field(size_bytes="13")]
     pub config: OsdConfig,
 }
@@ -149,19 +149,6 @@ pub struct MspSetOsdLayout {
     pub item_index: u8,
     #[packed_field(size_bytes="2")]
     pub item: OsdItemPosition,
-}
-
-// const MAX_MODE_ACTIVATION_CONDITION_COUNT: u8 = 20u8;
-
-#[derive(PackedStruct, Copy, Clone)]
-#[packed_struct(bytes = "14", endian = "lsb", bit_numbering = "msb0")]
-pub struct MspOsdConfigsReplay {
-    pub osd_support: u8,
-    #[packed_field(size_bytes="13")]
-    pub config: OsdConfig,
-    // TODO: this field should be dynamic size, TOOD: read into vector instead of of this shit
-    #[packed_field(element_size_bytes="2")]
-    pub item_positions: [OsdItemPosition; 117], // OSD_ITEM_COUNT is 106.. with xtend extension is 117 but can be extended to be more
 }
 
 #[derive(Debug)]
@@ -265,8 +252,8 @@ pub struct INavMsp {
     set_motor_mixer_ack_send: Sender<()>,
 
 
-    osd_configs_recv: Receiver<MspOsdConfigsReplay>,
-    osd_configs_send: Sender<MspOsdConfigsReplay>,
+    osd_configs_recv: Receiver<OsdSettings>,
+    osd_configs_send: Sender<OsdSettings>,
     set_osd_config_ack_recv: Receiver<()>,
     set_osd_config_ack_send: Sender<()>,
 
@@ -294,7 +281,7 @@ impl INavMsp {
         let (motor_mixers_send, motor_mixers_recv) = channel::<MspMotorMixersReplay>(100);
         let (set_motor_mixer_ack_send, set_motor_mixer_ack_recv) = channel::<()>(100);
 
-        let (osd_configs_send, osd_configs_recv) = channel::<MspOsdConfigsReplay>(100);
+        let (osd_configs_send, osd_configs_recv) = channel::<OsdSettings>(100);
         let (set_osd_config_ack_send, set_osd_config_ack_recv) = channel::<()>(100);
 
         let (serial_settings_send, serial_settings_recv) = channel::<Vec<SerialSetting>>(100);
@@ -362,7 +349,7 @@ impl INavMsp {
         set_mode_range_ack_send: Sender<()>,
         motor_mixers_send: Sender<MspMotorMixersReplay>,
         set_motor_mixer_ack_send: Sender<()>,
-        osd_configs_send: Sender<MspOsdConfigsReplay>,
+        osd_configs_send: Sender<OsdSettings>,
         set_osd_config_ack_send: Sender<()>,
         serial_settings_send: Sender<Vec<SerialSetting>>,
         set_serial_settings_ack_send: Sender<()>,
@@ -401,8 +388,21 @@ impl INavMsp {
                 }
 
                 if packet.cmd == MspCommandCode::MSP_OSD_CONFIG as u16 {
-                    let osd_configs = MspOsdConfigsReplay::unpack_from_slice(&packet.data).unwrap();
-                    osd_configs_send.send(osd_configs).await;
+                    let header_len = MspSetGetOsdConfig::packed_bytes();
+                    let osd_set_get_reply = MspSetGetOsdConfig::unpack_from_slice(&packet.data[..header_len]).unwrap();
+
+                    let mut item_positions = vec![];
+                    let len = OsdItemPosition::packed_bytes();
+                    for i in (header_len..packet.data.len()).step_by(len) {
+                        let item_pos = OsdItemPosition::unpack_from_slice(&packet.data[i..i+len]).unwrap();
+                        item_positions.push(item_pos);
+                    }
+
+                    osd_configs_send.send(OsdSettings {
+                        osd_support: osd_set_get_reply.item_index,
+                        config: osd_set_get_reply.config,
+                        item_positions: item_positions,
+                    }).await;
                 }
 
                 if packet.cmd == MspCommandCode::MSP_SET_OSD_CONFIG as u16 {
@@ -736,7 +736,7 @@ impl INavMsp {
         // if -1 will set different kinds of configurations else the laytout id
         // but when fetching it always returns everything with correct osd_support
         // so it seems to set everything we need to call it twice, once with -1 and then with the real value
-        let payload = MspSetOsdConfig {
+        let payload = MspSetGetOsdConfig {
             item_index: 0xffu8,
             config: config,
         };
@@ -774,16 +774,7 @@ impl INavMsp {
 
         let config_replay = timeout_res.unwrap().unwrap();
 
-        let osd_settings = OsdSettings {
-            osd_support: config_replay.osd_support,
-            config: config_replay.config,
-            item_positions: config_replay.item_positions.to_vec(),
-        };
-
-
-        // TODO: how do we distinguish between set layouts and unset
-
-        return Ok(osd_settings);
+        return Ok(config_replay);
 	  }
 
     pub async fn set_serial_settings(&self, serials: Vec<SerialSetting>) -> io::Result<()> {
