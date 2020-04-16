@@ -12,7 +12,6 @@ use packed_struct::prelude::*;
 use async_std::sync::{channel, Sender, Receiver};
 use async_std::{io, task};
 use async_std::future;
-
 use std::time::Duration;
 
 mod core;
@@ -48,7 +47,7 @@ pub struct MspDataFlashSummaryReply {
 #[packed_struct(bytes = "4", endian = "lsb", bit_numbering = "msb0")]
 pub struct MspModeRange {
     pub box_id: u8,
-    pub aux_channel_index: u8,
+    pub aux_channel_index: u8, // TODO: use MspRcChannel
     pub start_step: u8,
     pub end_step: u8,
 }
@@ -174,7 +173,7 @@ pub struct SerialSetting {
 
 pub struct FlashDataFile {
     core: core::Core,
-    chunk_recv: Receiver<MspDataFlashReply>,
+    chunk_recv: Receiver<Vec<u8>>,
     used_size: u32,
     next_address: u32,
     // requested_address: u32,
@@ -212,7 +211,8 @@ impl FlashDataFile {
             if timeout_res.is_ok() {
                 match timeout_res.unwrap() {
                     None => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
-                    Some(packet) => {
+                    Some(payload) => {
+                        let packet = INavMsp::parse_chunk(payload);
 
                         if packet.read_address >= self.next_address {
                             self.received_address = packet.read_address;
@@ -237,37 +237,39 @@ impl FlashDataFile {
     }
 }
 
+// TODO: we should pass by reference in channel, or Vec<u8> reference
 pub struct INavMsp {
     core: core::Core,
 
-    mode_ranges_recv: Receiver<MspModeRangesReplay>,
-    mode_ranges_send: Sender<MspModeRangesReplay>,
+    mode_ranges_recv: Receiver<Vec<u8>>,
+    mode_ranges_send: Sender<Vec<u8>>,
     set_mode_range_ack_recv: Receiver<()>,
     set_mode_range_ack_send: Sender<()>,
 
 
-    motor_mixers_recv: Receiver<MspMotorMixersReplay>,
-    motor_mixers_send: Sender<MspMotorMixersReplay>,
+    motor_mixers_recv: Receiver<Vec<u8>>,
+    motor_mixers_send: Sender<Vec<u8>>,
     set_motor_mixer_ack_recv: Receiver<()>,
     set_motor_mixer_ack_send: Sender<()>,
 
 
-    osd_configs_recv: Receiver<OsdSettings>,
-    osd_configs_send: Sender<OsdSettings>,
+    osd_configs_recv: Receiver<Vec<u8>>,
+    osd_configs_send: Sender<Vec<u8>>,
     set_osd_config_ack_recv: Receiver<()>,
     set_osd_config_ack_send: Sender<()>,
 
 
-    serial_settings_recv: Receiver<Vec<SerialSetting>>,
-    serial_settings_send: Sender<Vec<SerialSetting>>,
+    serial_settings_recv: Receiver<Vec<u8>>,
+    serial_settings_send: Sender<Vec<u8>>,
     set_serial_settings_ack_recv: Receiver<()>,
     set_serial_settings_ack_send: Sender<()>,
 
 
-    summary_recv: Receiver<MspDataFlashSummaryReply>,
-    summary_send: Sender<MspDataFlashSummaryReply>,
-    chunk_recv: Receiver<MspDataFlashReply>,
-    chunk_send: Sender<MspDataFlashReply>,
+    summary_recv: Receiver<Vec<u8>>,
+    summary_send: Sender<Vec<u8>>,
+
+    chunk_recv: Receiver<Vec<u8>>,
+    chunk_send: Sender<Vec<u8>>,
 }
 
 impl INavMsp {
@@ -275,20 +277,20 @@ impl INavMsp {
     pub fn new() -> INavMsp {
         let core = core::Core::new();
 
-        let (mode_ranges_send, mode_ranges_recv) = channel::<MspModeRangesReplay>(100);
+        let (mode_ranges_send, mode_ranges_recv) = channel::<Vec<u8>>(100);
         let (set_mode_range_ack_send, set_mode_range_ack_recv) = channel::<()>(100);
 
-        let (motor_mixers_send, motor_mixers_recv) = channel::<MspMotorMixersReplay>(100);
+        let (motor_mixers_send, motor_mixers_recv) = channel::<Vec<u8>>(100);
         let (set_motor_mixer_ack_send, set_motor_mixer_ack_recv) = channel::<()>(100);
 
-        let (osd_configs_send, osd_configs_recv) = channel::<OsdSettings>(100);
+        let (osd_configs_send, osd_configs_recv) = channel::<Vec<u8>>(100);
         let (set_osd_config_ack_send, set_osd_config_ack_recv) = channel::<()>(100);
 
-        let (serial_settings_send, serial_settings_recv) = channel::<Vec<SerialSetting>>(100);
+        let (serial_settings_send, serial_settings_recv) = channel::<Vec<u8>>(100);
         let (set_serial_settings_ack_send, set_serial_settings_ack_recv) = channel::<()>(100);
 
-        let (summary_send, summary_recv) = channel::<MspDataFlashSummaryReply>(100);
-        let (chunk_send, chunk_recv) = channel::<MspDataFlashReply>(4096);
+        let (summary_send, summary_recv) = channel::<Vec<u8>>(100);
+        let (chunk_send, chunk_recv) = channel::<Vec<u8>>(4096);
 
         return INavMsp {
             core: core,
@@ -345,16 +347,21 @@ impl INavMsp {
 
     fn process_route(
         core: core::Core,
-        mode_ranges_send: Sender<MspModeRangesReplay>,
+        mode_ranges_send: Sender<Vec<u8>>,
         set_mode_range_ack_send: Sender<()>,
-        motor_mixers_send: Sender<MspMotorMixersReplay>,
+
+        motor_mixers_send: Sender<Vec<u8>>,
         set_motor_mixer_ack_send: Sender<()>,
-        osd_configs_send: Sender<OsdSettings>,
+
+        osd_configs_send: Sender<Vec<u8>>,
         set_osd_config_ack_send: Sender<()>,
-        serial_settings_send: Sender<Vec<SerialSetting>>,
+
+        serial_settings_send: Sender<Vec<u8>>,
         set_serial_settings_ack_send: Sender<()>,
-        summary_send: Sender<MspDataFlashSummaryReply>,
-        chunk_send: Sender<MspDataFlashReply>,
+
+        summary_send: Sender<Vec<u8>>,
+
+        chunk_send: Sender<Vec<u8>>,
     ) {
         task::spawn(async move {
             loop {
@@ -367,90 +374,28 @@ impl INavMsp {
                     continue;
                 }
 
-                if packet.cmd == MspCommandCode::MSP_MODE_RANGES as u16 {
-                    let ranges = MspModeRangesReplay::unpack_from_slice(&packet.data).unwrap();
-                    mode_ranges_send.send(ranges).await;
+                let cmd = MspCommandCode::from_primitive(packet.cmd);
+
+                match cmd {
+                    Some(MspCommandCode::MSP_MODE_RANGES) => mode_ranges_send.send(packet.data).await,
+                    Some(MspCommandCode::MSP_SET_MODE_RANGE) => set_mode_range_ack_send.send(()).await,
+
+                    Some(MspCommandCode::MSP2_MOTOR_MIXER) => motor_mixers_send.send(packet.data).await,
+                    Some(MspCommandCode::MSP2_SET_MOTOR_MIXER) => set_motor_mixer_ack_send.send(()).await,
+
+                    Some(MspCommandCode::MSP_OSD_CONFIG) => osd_configs_send.send(packet.data).await,
+                    Some(MspCommandCode::MSP_SET_OSD_CONFIG) => set_osd_config_ack_send.send(()).await,
+
+                    Some(MspCommandCode::MSP2_SERIAL_CONFIG) => serial_settings_send.send(packet.data).await,
+                    Some(MspCommandCode::MSP2_SET_SERIAL_CONFIG) => set_serial_settings_ack_send.send(()).await,
+
+                    Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => summary_send.send(packet.data).await,
+
+                    Some(MspCommandCode::MSP_DATAFLASH_READ) => chunk_send.send(packet.data).await,
+
+                    _ => (),
                 }
-
-                if packet.cmd == MspCommandCode::MSP_SET_MODE_RANGE as u16 {
-                    // packet data should be empty, so just signal ack is received
-                    set_mode_range_ack_send.send(()).await;
-                }
-
-                if packet.cmd == MspCommandCode::MSP2_MOTOR_MIXER as u16 {
-                    let mixers = MspMotorMixersReplay::unpack_from_slice(&packet.data).unwrap();
-                    motor_mixers_send.send(mixers).await;
-                }
-
-                if packet.cmd == MspCommandCode::MSP2_SET_MOTOR_MIXER as u16 {
-                    // packet data should be empty, so just signal ack is received
-                    set_motor_mixer_ack_send.send(()).await;
-                }
-
-                if packet.cmd == MspCommandCode::MSP_OSD_CONFIG as u16 {
-                    let header_len = MspSetGetOsdConfig::packed_bytes();
-                    let osd_set_get_reply = MspSetGetOsdConfig::unpack_from_slice(&packet.data[..header_len]).unwrap();
-
-                    let mut item_positions = vec![];
-                    let len = OsdItemPosition::packed_bytes();
-                    for i in (header_len..packet.data.len()).step_by(len) {
-                        let item_pos = OsdItemPosition::unpack_from_slice(&packet.data[i..i+len]).unwrap();
-                        item_positions.push(item_pos);
-                    }
-
-                    osd_configs_send.send(OsdSettings {
-                        osd_support: osd_set_get_reply.item_index,
-                        config: osd_set_get_reply.config,
-                        item_positions: item_positions,
-                    }).await;
-                }
-
-                if packet.cmd == MspCommandCode::MSP_SET_OSD_CONFIG as u16 {
-                    // packet data should be empty, so just signal ack is received
-                    set_osd_config_ack_send.send(()).await;
-                }
-
-                if packet.cmd == MspCommandCode::MSP2_SERIAL_CONFIG as u16 {
-                    let mut serials = vec![];
-                    let len = SerialSetting::packed_bytes();
-
-                    for i in (0..packet.data.len()).step_by(len) {
-                        let serial_setting = SerialSetting::unpack_from_slice(&packet.data[i..i+len]).unwrap();
-                        serials.push(serial_setting);
-                    }
-
-                    serial_settings_send.send(serials).await;
-                }
-
-                if packet.cmd == MspCommandCode::MSP2_SET_SERIAL_CONFIG as u16 {
-                    // packet data should be empty, so just signal ack is received
-                    set_serial_settings_ack_send.send(()).await;
-                }
-
-
-                if packet.cmd == MspCommandCode::MSP_DATAFLASH_SUMMARY as u16 {
-                    let summary = MspDataFlashSummaryReply::unpack_from_slice(&packet.data).unwrap();
-                    summary_send.send(summary).await;
-                }
-
-                if packet.cmd == MspCommandCode::MSP_DATAFLASH_READ as u16 {
-                    // extract the read address from the packet
-                    let mut s = [0; 4];
-                    s.copy_from_slice(&packet.data[..4]);
-                    let packet_address = u32::from_le_bytes(s);
-
-                    // remove the last address bytes and send to remaning payload to file stream(stdout)
-                    let packet_payload = &packet.data[4..];
-
-                    let chunk = MspDataFlashReply {
-                        read_address: packet_address,
-                        payload: packet_payload.to_vec(),
-                    };
-                    chunk_send.send(chunk).await;
-                }
-
-                // TODO: create debug flag for additional print on demand
-                // println!("{:?}", packet);
+                // TODO: create debug(--verbose) flag for additional print on demand
             }
         });
     }
@@ -471,6 +416,21 @@ impl INavMsp {
             received_address: 0u32,
         };
 	  }
+
+    pub fn parse_chunk(payload: Vec<u8>) -> MspDataFlashReply {
+        // extract the read address from the packet
+        let mut s = [0; 4];
+        s.copy_from_slice(&payload[..4]);
+        let packet_address = u32::from_le_bytes(s);
+
+        // remove the last address bytes and send to remaning payload to file stream(stdout)
+        let packet_payload = &payload[4..];
+
+        return MspDataFlashReply {
+            read_address: packet_address,
+            payload: packet_payload.to_vec(),
+        };
+    }
 
     // TODO: use https://docs.rs/async-std/1.5.0/async_std/io/struct.Cursor.html to write unordered file stream,
     // TODO: move blackbox to sibling module
@@ -521,35 +481,37 @@ impl INavMsp {
                 // TODO: maybe let the caller handle the timeout?
                 let timeout_res = future::timeout(Duration::from_millis(500), self.chunk_recv.recv()).await;
 
-                if timeout_res.is_ok() {
-                    match timeout_res.unwrap() {
-                        None => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
-                        Some(packet) => {
-                            let idx = match expected_address.binary_search(&(packet.read_address as usize)) {
-                                Ok(idx) => idx,
-                                Err(_) => continue,
-                            };
-
-                            // last element can be less then chunk size
-                            // assert_eq!(*&chunk_size as usize, packet.payload.len());
-
-                            let insert_location = &(packet.read_address as usize) / &chunk_size;
-                            (&mut accumulated_payload)[insert_location as usize] = packet.payload;
-                            expected_address.remove(idx);
-
-                            callback(used_size - expected_address.len() * chunk_size, used_size);
-
-                            if expected_address.is_empty() {
-                                let buff = accumulated_payload.iter().cloned().flatten().collect::<Vec<u8>>();
-                                // println!("return {:?}", buff.len());
-                                return Ok(buff);
-                            }
-                        }
-                    }
-                } else {
+                if !timeout_res.is_ok() {
                     self.core.reset_parser().await;
                     // println!("timeout, address left {:?}", expected_address);
                     break;
+                }
+
+                match timeout_res.unwrap() {
+                    None => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
+                    Some(payload) => {
+                        let packet = INavMsp::parse_chunk(payload);
+
+                        let idx = match expected_address.binary_search(&(packet.read_address as usize)) {
+                            Ok(idx) => idx,
+                            Err(_) => continue,
+                        };
+
+                        // last element can be less then chunk size
+                        // assert_eq!(*&chunk_size as usize, packet.payload.len());
+
+                        let insert_location = &(packet.read_address as usize) / &chunk_size;
+                        (&mut accumulated_payload)[insert_location as usize] = packet.payload;
+                        expected_address.remove(idx);
+
+                        callback(used_size - expected_address.len() * chunk_size, used_size);
+
+                        if expected_address.is_empty() {
+                            let buff = accumulated_payload.iter().cloned().flatten().collect::<Vec<u8>>();
+                            // println!("return {:?}", buff.len());
+                            return Ok(buff);
+                        }
+                    }
                 }
             }
         }
@@ -565,11 +527,15 @@ impl INavMsp {
         self.core.write(packet).await;
 
         let timeout_res = future::timeout(Duration::from_millis(500), self.summary_recv.recv()).await;
-        if timeout_res.is_ok() {
-            return Ok(timeout_res.unwrap().unwrap());
+
+        if !timeout_res.is_ok() {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for summary response"));
         }
 
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for summary response"));
+        let payload = timeout_res.unwrap().unwrap();
+        let summary = MspDataFlashSummaryReply::unpack_from_slice(&payload).unwrap();
+
+        return Ok(summary);
 	  }
 
     pub async fn set_mode_range(&self, mode: ModeRange) -> io::Result<()> {
@@ -619,7 +585,8 @@ impl INavMsp {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get mode ranges response"));
         }
 
-        let ranges_replay = timeout_res.unwrap().unwrap();
+        let payload = timeout_res.unwrap().unwrap();
+        let ranges_replay = MspModeRangesReplay::unpack_from_slice(&payload).unwrap();
         let mut valid_ranges = vec![];
 
         // TODO: not all 20 ranges will be active, return only the active ranges
@@ -686,8 +653,8 @@ impl INavMsp {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get motor mixers response"));
         }
 
-        let mmix_replay = timeout_res.unwrap().unwrap();
-
+        let payload = timeout_res.unwrap().unwrap();
+        let mmix_replay = MspMotorMixersReplay::unpack_from_slice(&payload).unwrap();
         let mut valid_mmix = vec![];
 
         // TODO: not all 20 ranges will be active, return only the active ranges
@@ -772,14 +739,27 @@ impl INavMsp {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get motor mixers response"));
         }
 
-        let config_replay = timeout_res.unwrap().unwrap();
+        let payload = timeout_res.unwrap().unwrap();
 
-        return Ok(config_replay);
+        let header_len = MspSetGetOsdConfig::packed_bytes();
+        let osd_set_get_reply = MspSetGetOsdConfig::unpack_from_slice(&payload[..header_len]).unwrap();
+
+        let mut item_positions = vec![];
+        let len = OsdItemPosition::packed_bytes();
+        for i in (header_len..payload.len()).step_by(len) {
+            let item_pos = OsdItemPosition::unpack_from_slice(&payload[i..i+len]).unwrap();
+            item_positions.push(item_pos);
+        }
+
+        return Ok(OsdSettings {
+            osd_support: osd_set_get_reply.item_index,
+            config: osd_set_get_reply.config,
+            item_positions: item_positions,
+        });
 	  }
 
     pub async fn set_serial_settings(&self, serials: Vec<SerialSetting>) -> io::Result<()> {
         let payload = serials.iter().flat_map(|s| s.pack().to_vec()).collect();
-
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_SET_SERIAL_CONFIG as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -811,21 +791,20 @@ impl INavMsp {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get serial settings response"));
         }
 
-        let serials_replay = timeout_res.unwrap().unwrap();
+        let payload = timeout_res.unwrap().unwrap();
 
-        let mut valid_serials = vec![];
+        let mut serials = vec![];
+        let len = SerialSetting::packed_bytes();
 
-        // TODO: not all serials will be active, return only the active ranges
-        serials_replay.iter().fold(&mut valid_serials, |acc, s| {
-            if s.index != 0 {
-                acc.push(*s);
+        for i in (0..payload.len()).step_by(len) {
+            let serial_setting = SerialSetting::unpack_from_slice(&payload[i..i+len]).unwrap();
+            if serial_setting.index != 0 {
+                serials.push(serial_setting);
             }
+        }
 
-            return acc;
-        });
-
-        return Ok(valid_serials);
-
+        return Ok(serials);
+        // return parsers::serial::unpack_command(payload).await;
 	  }
 
 }
