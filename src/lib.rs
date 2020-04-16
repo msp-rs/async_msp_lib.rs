@@ -2,10 +2,9 @@ extern crate alloc;
 extern crate multiwii_serial_protocol;
 extern crate serialport;
 extern crate packed_struct;
-#[macro_use]
-extern crate packed_struct_codegen;
 
 use multiwii_serial_protocol::{MspCommandCode, MspPacket, MspPacketDirection};
+use multiwii_serial_protocol::structs::*;
 use serialport::SerialPort;
 use packed_struct::prelude::*;
 
@@ -17,58 +16,10 @@ use std::time::Duration;
 mod core;
 
 
-// TODO: move this to multiwii_serial_protocol.rs library
-// TODO: and figure out why we can't call unpack on structs from multiwii library
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(bytes = "6", endian = "lsb", bit_numbering = "msb0")]
-pub struct MspDataFlashRead {
-    pub read_address: u32,
-    pub read_length: u16,
-}
-
-pub struct MspDataFlashReply {
+pub struct MspDataFlashReplyWithData {
     pub read_address: u32,
     pub payload: Vec<u8>,
 }
-
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(bytes = "1", endian = "lsb", bit_numbering = "msb0")]
-pub struct MspDataFlashSummaryReply {
-    #[packed_field(bits = "6")]
-    pub supported: bool,
-    #[packed_field(bits = "7")]
-    pub ready: bool,
-    pub sectors: u32,
-    pub total_size_bytes: u32,
-    pub used_size_bytes: u32,
-}
-
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(bytes = "4", endian = "lsb", bit_numbering = "msb0")]
-pub struct MspModeRange {
-    pub box_id: u8,
-    pub aux_channel_index: u8, // TODO: use MspRcChannel
-    pub start_step: u8,
-    pub end_step: u8,
-}
-
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(bytes = "5", endian = "lsb", bit_numbering = "msb0")]
-pub struct MspSetModeRange {
-    pub index: u8,
-    #[packed_field(size_bytes="4")]
-    pub mode_range: MspModeRange,
-}
-
-// const MAX_MODE_ACTIVATION_CONDITION_COUNT: u8 = 20u8;
-
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(endian = "lsb", bit_numbering = "msb0")]
-pub struct MspModeRangesReplay {
-    #[packed_field(element_size_bytes="4")]
-    mode_ranges: [MspModeRange; 20], // 20 is defined as MAX_MODE_ACTIVATION_CONDITION_COUNT
-}
-
 
 #[derive(Debug)]
 pub struct ModeRange {
@@ -79,31 +30,6 @@ pub struct ModeRange {
     pub end_step: u8,
 }
 
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(bytes = "8", endian = "lsb", bit_numbering = "msb0")]
-pub struct MspMotorMixer {
-    pub throttle: u16,
-    pub roll: u16,
-    pub pitch: u16,
-    pub yaw: u16,
-}
-
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(bytes = "9", endian = "lsb", bit_numbering = "msb0")]
-pub struct MspSetMotorMixer {
-    pub index: u8,
-    #[packed_field(size_bytes="8")]
-    pub motor_mixer: MspMotorMixer,
-}
-
-// const MAX_MODE_ACTIVATION_CONDITION_COUNT: u8 = 20u8;
-
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(endian = "lsb", bit_numbering = "msb0")]
-pub struct MspMotorMixersReplay {
-    #[packed_field(element_size_bytes="8")]
-    mode_ranges: [MspMotorMixer; 12], // 12 is defined as MAX_SUPPORTED_MOTORS
-}
 
 #[derive(Debug)]
 pub struct MotorMixer {
@@ -113,63 +39,6 @@ pub struct MotorMixer {
     pub pitch: u16,
     pub yaw: u16,
 }
-
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(bytes = "13", endian = "lsb", bit_numbering = "msb0")]
-pub struct OsdConfig {
-    pub video_system: u8,
-    pub units: u8,
-    pub rssi_alarm: u8,
-    pub capacity_warning: u16,
-    pub time_alarm: u16,
-    pub alt_alarm: u16,
-    pub dist_alarm: u16,
-    pub neg_alt_alarm: u16,
-}
-
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(bytes = "1", endian = "lsb", bit_numbering = "msb0")]
-pub struct MspSetGetOsdConfig {
-    pub item_index: u8,
-    #[packed_field(size_bytes="13")]
-    pub config: OsdConfig,
-}
-
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(bytes = "2", endian = "lsb", bit_numbering = "msb0")]
-pub struct OsdItemPosition {
-    pub col: u8,
-    pub row: u8,
-}
-
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(bytes = "1", endian = "lsb", bit_numbering = "msb0")]
-pub struct MspSetOsdLayout {
-    pub item_index: u8,
-    #[packed_field(size_bytes="2")]
-    pub item: OsdItemPosition,
-}
-
-#[derive(Debug)]
-pub struct OsdSettings {
-    pub osd_support: u8,
-    pub config: OsdConfig,
-    pub item_positions: Vec<OsdItemPosition>,
-}
-
-#[derive(PackedStruct, Debug, Copy, Clone)]
-#[packed_struct(endian = "lsb", bit_numbering = "msb0")]
-pub struct SerialSetting {
-    pub index: u8,
-    pub function_mask: u32,
-    pub msp_baudrate_index: u8,
-    pub gps_baudrate_index: u8,
-    pub telemetry_baudrate_index: u8,
-    pub peripheral_baudrate_index: u8,
-}
-
-
-// TODO: extract this code to rust module(different file)
 
 pub struct FlashDataFile {
     core: core::Core,
@@ -417,17 +286,15 @@ impl INavMsp {
         };
 	  }
 
-    pub fn parse_chunk(payload: Vec<u8>) -> MspDataFlashReply {
+    pub fn parse_chunk(payload: Vec<u8>) -> MspDataFlashReplyWithData {
         // extract the read address from the packet
-        let mut s = [0; 4];
-        s.copy_from_slice(&payload[..4]);
-        let packet_address = u32::from_le_bytes(s);
+        let flash_reply = MspDataFlashReply::unpack_from_slice(&payload[..4]).unwrap();
 
         // remove the last address bytes and send to remaning payload to file stream(stdout)
         let packet_payload = &payload[4..];
 
-        return MspDataFlashReply {
-            read_address: packet_address,
+        return MspDataFlashReplyWithData {
+            read_address: flash_reply.read_address,
             payload: packet_payload.to_vec(),
         };
     }
@@ -544,7 +411,7 @@ impl INavMsp {
             index: mode.index,
             mode_range: MspModeRange {
                 box_id: mode.box_id,
-                aux_channel_index: mode.aux_channel_index,
+                aux_channel_index: MspRcChannel::from_primitive(mode.aux_channel_index).unwrap(),
                 start_step: mode.start_step,
                 end_step: mode.end_step,
             }
@@ -586,25 +453,22 @@ impl INavMsp {
         }
 
         let payload = timeout_res.unwrap().unwrap();
-        let ranges_replay = MspModeRangesReplay::unpack_from_slice(&payload).unwrap();
-        let mut valid_ranges = vec![];
 
-        // TODO: not all 20 ranges will be active, return only the active ranges
-        ranges_replay.mode_ranges.iter().enumerate().fold(&mut valid_ranges, |acc, (i, r)| {
-            if r.start_step != 0 && r.end_step != 0 {
-                acc.push(ModeRange {
-                    index: i as u8,
-                    box_id: r.box_id,
-                    aux_channel_index: r.aux_channel_index,
-                    start_step: r.start_step,
-                    end_step: r.end_step,
-                });
-            }
+        let mut ranges = vec![];
+        let len = MspModeRange::packed_bytes();
+        for i in (0..payload.len()).step_by(len) {
+            let r = MspModeRange::unpack_from_slice(&payload[i..i+len]).unwrap();
 
-            return acc;
-        });
+            ranges.push(ModeRange {
+                index: (i / len) as u8,
+                box_id: r.box_id,
+                aux_channel_index: r.aux_channel_index.to_primitive(),
+                start_step: r.start_step,
+                end_step: r.end_step,
+            });
+        }
 
-        return Ok(valid_ranges);
+        return Ok(ranges);
 	  }
 
     pub async fn set_motor_mixer(&self, mmix: MotorMixer) -> io::Result<()> {
@@ -654,25 +518,24 @@ impl INavMsp {
         }
 
         let payload = timeout_res.unwrap().unwrap();
-        let mmix_replay = MspMotorMixersReplay::unpack_from_slice(&payload).unwrap();
-        let mut valid_mmix = vec![];
 
-        // TODO: not all 20 ranges will be active, return only the active ranges
-        mmix_replay.mode_ranges.iter().enumerate().fold(&mut valid_mmix, |acc, (i, m)| {
+        let mut mmixers = vec![];
+        let len = MspMotorMixer::packed_bytes();
+
+        for i in (0..payload.len()).step_by(len) {
+            let m = MspMotorMixer::unpack_from_slice(&payload[i..i+len]).unwrap();
             if m.throttle != 0 {
-                acc.push(MotorMixer {
-                    index: i as u8,
+                mmixers.push(MotorMixer {
+                    index: (i / len) as u8,
                     throttle: m.throttle,
                     roll: m.roll,
                     pitch: m.pitch,
                     yaw: m.yaw,
                 });
             }
+        }
 
-            return acc;
-        });
-
-        return Ok(valid_mmix);
+        return Ok(mmixers);
 	  }
 
     pub async fn set_osd_config_item(&self, id: u8, item: OsdItemPosition) -> io::Result<()> {
