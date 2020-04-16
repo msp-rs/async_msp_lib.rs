@@ -134,6 +134,12 @@ pub struct INavMsp {
     set_serial_settings_ack_send: Sender<()>,
 
 
+    features_recv: Receiver<Vec<u8>>,
+    features_send: Sender<Vec<u8>>,
+    set_features_ack_recv: Receiver<()>,
+    set_features_ack_send: Sender<()>,
+
+
     summary_recv: Receiver<Vec<u8>>,
     summary_send: Sender<Vec<u8>>,
 
@@ -157,6 +163,9 @@ impl INavMsp {
 
         let (serial_settings_send, serial_settings_recv) = channel::<Vec<u8>>(100);
         let (set_serial_settings_ack_send, set_serial_settings_ack_recv) = channel::<()>(100);
+
+        let (features_send, features_recv) = channel::<Vec<u8>>(100);
+        let (set_features_ack_send, set_features_ack_recv) = channel::<()>(100);
 
         let (summary_send, summary_recv) = channel::<Vec<u8>>(100);
         let (chunk_send, chunk_recv) = channel::<Vec<u8>>(4096);
@@ -188,6 +197,12 @@ impl INavMsp {
             set_serial_settings_ack_send: set_serial_settings_ack_send,
 
 
+            features_send: features_send,
+            features_recv: features_recv,
+            set_features_ack_recv: set_features_ack_recv,
+            set_features_ack_send: set_features_ack_send,
+
+
             summary_send: summary_send,
             summary_recv: summary_recv,
             chunk_send: chunk_send,
@@ -201,14 +216,22 @@ impl INavMsp {
 
         INavMsp::process_route(
             self.core.clone(),
+
             self.mode_ranges_send.clone(),
             self.set_mode_range_ack_send.clone(),
+
             self.motor_mixers_send.clone(),
             self.set_motor_mixer_ack_send.clone(),
+
             self.osd_configs_send.clone(),
             self.set_osd_config_ack_send.clone(),
+
             self.serial_settings_send.clone(),
             self.set_serial_settings_ack_send.clone(),
+
+            self.features_send.clone(),
+            self.set_features_ack_send.clone(),
+
             self.summary_send.clone(),
             self.chunk_send.clone(),
         );
@@ -227,6 +250,9 @@ impl INavMsp {
 
         serial_settings_send: Sender<Vec<u8>>,
         set_serial_settings_ack_send: Sender<()>,
+
+        features_send: Sender<Vec<u8>>,
+        set_features_ack_send: Sender<()>,
 
         summary_send: Sender<Vec<u8>>,
 
@@ -257,6 +283,9 @@ impl INavMsp {
 
                     Some(MspCommandCode::MSP2_SERIAL_CONFIG) => serial_settings_send.send(packet.data).await,
                     Some(MspCommandCode::MSP2_SET_SERIAL_CONFIG) => set_serial_settings_ack_send.send(()).await,
+
+                    Some(MspCommandCode::MSP_FEATURE) => features_send.send(packet.data).await,
+                    Some(MspCommandCode::MSP_SET_FEATURE) => set_features_ack_send.send(()).await,
 
                     Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => summary_send.send(packet.data).await,
 
@@ -375,7 +404,6 @@ impl INavMsp {
 
                         if expected_address.is_empty() {
                             let buff = accumulated_payload.iter().cloned().flatten().collect::<Vec<u8>>();
-                            // println!("return {:?}", buff.len());
                             return Ok(buff);
                         }
                     }
@@ -425,7 +453,6 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        // TODO: we are not sure this ack is for our request, because there is no id for the request
         let timeout_res = future::timeout(Duration::from_millis(500), self.set_mode_range_ack_recv.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
@@ -491,7 +518,6 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        // TODO: we are not sure this ack is for our request, because there is no id for the request
         let timeout_res = future::timeout(Duration::from_millis(500), self.set_motor_mixer_ack_recv.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
@@ -508,9 +534,6 @@ impl INavMsp {
         };
 
         self.core.write(packet).await;
-
-        // TODO: we are not sure this ack is for our request, because there is no id for the request, unlike mavlink packet
-        // TODO: what if we are reading packet that was sent long time ago
 
         let timeout_res = future::timeout(Duration::from_millis(5000), self.motor_mixers_recv.recv()).await;
         if !timeout_res.is_ok() {
@@ -552,7 +575,6 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        // TODO: we are not sure this ack is for our request, because there is no id for the request
         let timeout_res = future::timeout(Duration::from_millis(500), self.set_osd_config_ack_recv.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
@@ -579,7 +601,6 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        // TODO: we are not sure this ack is for our request, because there is no id for the request
         let timeout_res = future::timeout(Duration::from_millis(500), self.set_osd_config_ack_recv.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
@@ -631,7 +652,6 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        // TODO: we are not sure this ack is for our request, because there is no id for the request
         let timeout_res = future::timeout(Duration::from_millis(500), self.set_serial_settings_ack_recv.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
@@ -667,7 +687,42 @@ impl INavMsp {
         }
 
         return Ok(serials);
-        // return parsers::serial::unpack_command(payload).await;
 	  }
 
+    pub async fn set_features(&self, features: MspFeatures) -> io::Result<()> {
+        // let payload = serials.iter().flat_map(|s| s.pack().to_vec()).collect();
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_SET_FEATURE as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: features.pack().to_vec(),
+        };
+
+        self.core.write(packet).await;
+
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_features_ack_recv.recv()).await;
+        if timeout_res.is_ok() {
+            return Ok(timeout_res.unwrap().unwrap());
+        }
+
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set features response"));
+	  }
+
+    pub async fn get_features(&self) -> io::Result<MspFeatures> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_FEATURE as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.core.write(packet).await;
+
+        let timeout_res = future::timeout(Duration::from_millis(5000), self.features_recv.recv()).await;
+        if !timeout_res.is_ok() {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get features response"));
+        }
+
+        let payload = timeout_res.unwrap().unwrap();
+
+        return Ok(MspFeatures::unpack_from_slice(&payload).unwrap());
+	  }
 }
