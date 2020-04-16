@@ -140,6 +140,12 @@ pub struct INavMsp {
     set_features_ack_send: Sender<()>,
 
 
+    servo_mix_rules_recv: Receiver<Vec<u8>>,
+    servo_mix_rules_send: Sender<Vec<u8>>,
+    set_servo_mix_rules_ack_recv: Receiver<()>,
+    set_servo_mix_rules_ack_send: Sender<()>,
+
+
     summary_recv: Receiver<Vec<u8>>,
     summary_send: Sender<Vec<u8>>,
 
@@ -166,6 +172,9 @@ impl INavMsp {
 
         let (features_send, features_recv) = channel::<Vec<u8>>(100);
         let (set_features_ack_send, set_features_ack_recv) = channel::<()>(100);
+
+        let (servo_mix_rules_send, servo_mix_rules_recv) = channel::<Vec<u8>>(100);
+        let (set_servo_mix_rules_ack_send, set_servo_mix_rules_ack_recv) = channel::<()>(100);
 
         let (summary_send, summary_recv) = channel::<Vec<u8>>(100);
         let (chunk_send, chunk_recv) = channel::<Vec<u8>>(4096);
@@ -203,6 +212,12 @@ impl INavMsp {
             set_features_ack_send: set_features_ack_send,
 
 
+            servo_mix_rules_send: servo_mix_rules_send,
+            servo_mix_rules_recv: servo_mix_rules_recv,
+            set_servo_mix_rules_ack_recv: set_servo_mix_rules_ack_recv,
+            set_servo_mix_rules_ack_send: set_servo_mix_rules_ack_send,
+
+
             summary_send: summary_send,
             summary_recv: summary_recv,
             chunk_send: chunk_send,
@@ -232,6 +247,9 @@ impl INavMsp {
             self.features_send.clone(),
             self.set_features_ack_send.clone(),
 
+            self.servo_mix_rules_send.clone(),
+            self.set_servo_mix_rules_ack_send.clone(),
+
             self.summary_send.clone(),
             self.chunk_send.clone(),
         );
@@ -253,6 +271,9 @@ impl INavMsp {
 
         features_send: Sender<Vec<u8>>,
         set_features_ack_send: Sender<()>,
+
+        servo_mix_rules_send: Sender<Vec<u8>>,
+        set_servo_mix_rules_ack_send: Sender<()>,
 
         summary_send: Sender<Vec<u8>>,
 
@@ -286,6 +307,9 @@ impl INavMsp {
 
                     Some(MspCommandCode::MSP_FEATURE) => features_send.send(packet.data).await,
                     Some(MspCommandCode::MSP_SET_FEATURE) => set_features_ack_send.send(()).await,
+
+                    Some(MspCommandCode::MSP_SERVO_MIX_RULES) => servo_mix_rules_send.send(packet.data).await,
+                    Some(MspCommandCode::MSP_SET_SERVO_MIX_RULE) => set_servo_mix_rules_ack_send.send(()).await,
 
                     Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => summary_send.send(packet.data).await,
 
@@ -724,5 +748,52 @@ impl INavMsp {
         let payload = timeout_res.unwrap().unwrap();
 
         return Ok(MspFeatures::unpack_from_slice(&payload).unwrap());
+	  }
+
+    pub async fn set_servo_mix_rules(&self, servo_mix_rules: Vec<MspServoMixRule>) -> io::Result<()> {
+        let payload = servo_mix_rules.iter().flat_map(|s| s.pack().to_vec()).collect();
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_SET_SERVO_MIX_RULE as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: payload,
+        };
+
+        self.core.write(packet).await;
+
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_servo_mix_rules_ack_recv.recv()).await;
+        if timeout_res.is_ok() {
+            return Ok(timeout_res.unwrap().unwrap());
+        }
+
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set servo mix response"));
+	  }
+
+    pub async fn get_servo_mix_rules(&self) -> io::Result<Vec<MspServoMixRule>> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_SERVO_MIX_RULES as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.core.write(packet).await;
+
+        let timeout_res = future::timeout(Duration::from_millis(5000), self.servo_mix_rules_recv.recv()).await;
+        if !timeout_res.is_ok() {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get servo mixer rules response"));
+        }
+
+        let payload = timeout_res.unwrap().unwrap();
+
+        let mut rules = vec![];
+        let len = MspServoMixRule::packed_bytes();
+
+        for i in (0..payload.len()).step_by(len) {
+            let serial_setting = MspServoMixRule::unpack_from_slice(&payload[i..i+len]).unwrap();
+            if serial_setting.index != 0 {
+                rules.push(serial_setting);
+            }
+        }
+
+        return Ok(rules);
 	  }
 }
