@@ -110,47 +110,27 @@ impl FlashDataFile {
 pub struct INavMsp {
     core: core::Core,
 
-    mode_ranges_recv: Receiver<Vec<u8>>,
-    mode_ranges_send: Sender<Vec<u8>>,
-    set_mode_range_ack_recv: Receiver<()>,
-    set_mode_range_ack_send: Sender<()>,
+    mode_ranges: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    set_mode_range_ack: (Sender<()>, Receiver<()>),
 
+    motor_mixers: (Sender<Vec<u8>>,Receiver<Vec<u8>>),
+    set_motor_mixer_ack: (Sender<()>, Receiver<()>),
 
-    motor_mixers_recv: Receiver<Vec<u8>>,
-    motor_mixers_send: Sender<Vec<u8>>,
-    set_motor_mixer_ack_recv: Receiver<()>,
-    set_motor_mixer_ack_send: Sender<()>,
+    osd_configs: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    set_osd_config_ack: (Sender<()>,Receiver<()>),
 
+    serial_settings: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    set_serial_settings_ack: (Sender<()>, Receiver<()>),
 
-    osd_configs_recv: Receiver<Vec<u8>>,
-    osd_configs_send: Sender<Vec<u8>>,
-    set_osd_config_ack_recv: Receiver<()>,
-    set_osd_config_ack_send: Sender<()>,
+    features: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    set_features_ack: (Sender<()>, Receiver<()>),
 
+    servo_mix_rules: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    set_servo_mix_rules_ack: (Sender<()>, Receiver<()>),
 
-    serial_settings_recv: Receiver<Vec<u8>>,
-    serial_settings_send: Sender<Vec<u8>>,
-    set_serial_settings_ack_recv: Receiver<()>,
-    set_serial_settings_ack_send: Sender<()>,
+    summary: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
 
-
-    features_recv: Receiver<Vec<u8>>,
-    features_send: Sender<Vec<u8>>,
-    set_features_ack_recv: Receiver<()>,
-    set_features_ack_send: Sender<()>,
-
-
-    servo_mix_rules_recv: Receiver<Vec<u8>>,
-    servo_mix_rules_send: Sender<Vec<u8>>,
-    set_servo_mix_rules_ack_recv: Receiver<()>,
-    set_servo_mix_rules_ack_send: Sender<()>,
-
-
-    summary_recv: Receiver<Vec<u8>>,
-    summary_send: Sender<Vec<u8>>,
-
-    chunk_recv: Receiver<Vec<u8>>,
-    chunk_send: Sender<Vec<u8>>,
+    chunk: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
 }
 
 impl INavMsp {
@@ -158,70 +138,30 @@ impl INavMsp {
     pub fn new() -> INavMsp {
         let core = core::Core::new();
 
-        let (mode_ranges_send, mode_ranges_recv) = channel::<Vec<u8>>(100);
-        let (set_mode_range_ack_send, set_mode_range_ack_recv) = channel::<()>(100);
-
-        let (motor_mixers_send, motor_mixers_recv) = channel::<Vec<u8>>(100);
-        let (set_motor_mixer_ack_send, set_motor_mixer_ack_recv) = channel::<()>(100);
-
-        let (osd_configs_send, osd_configs_recv) = channel::<Vec<u8>>(100);
-        let (set_osd_config_ack_send, set_osd_config_ack_recv) = channel::<()>(100);
-
-        let (serial_settings_send, serial_settings_recv) = channel::<Vec<u8>>(100);
-        let (set_serial_settings_ack_send, set_serial_settings_ack_recv) = channel::<()>(100);
-
-        let (features_send, features_recv) = channel::<Vec<u8>>(100);
-        let (set_features_ack_send, set_features_ack_recv) = channel::<()>(100);
-
-        let (servo_mix_rules_send, servo_mix_rules_recv) = channel::<Vec<u8>>(100);
-        let (set_servo_mix_rules_ack_send, set_servo_mix_rules_ack_recv) = channel::<()>(100);
-
-        let (summary_send, summary_recv) = channel::<Vec<u8>>(100);
-        let (chunk_send, chunk_recv) = channel::<Vec<u8>>(4096);
-
         return INavMsp {
             core: core,
 
-            mode_ranges_send: mode_ranges_send,
-            mode_ranges_recv: mode_ranges_recv,
-            set_mode_range_ack_recv: set_mode_range_ack_recv,
-            set_mode_range_ack_send: set_mode_range_ack_send,
+            mode_ranges: channel::<Vec<u8>>(100),
+            set_mode_range_ack: channel::<()>(100),
 
+            motor_mixers: channel::<Vec<u8>>(100),
+            set_motor_mixer_ack: channel::<()>(100),
 
-            motor_mixers_send: motor_mixers_send,
-            motor_mixers_recv: motor_mixers_recv,
-            set_motor_mixer_ack_recv: set_motor_mixer_ack_recv,
-            set_motor_mixer_ack_send: set_motor_mixer_ack_send,
+            osd_configs: channel::<Vec<u8>>(100),
+            set_osd_config_ack: channel::<()>(100),
 
+            serial_settings: channel::<Vec<u8>>(100),
+            set_serial_settings_ack: channel::<()>(100),
 
-            osd_configs_send: osd_configs_send,
-            osd_configs_recv: osd_configs_recv,
-            set_osd_config_ack_recv: set_osd_config_ack_recv,
-            set_osd_config_ack_send: set_osd_config_ack_send,
+            features: channel::<Vec<u8>>(100),
+            set_features_ack: channel::<()>(100),
 
+            servo_mix_rules: channel::<Vec<u8>>(100),
+            set_servo_mix_rules_ack: channel::<()>(100),
 
-            serial_settings_send: serial_settings_send,
-            serial_settings_recv: serial_settings_recv,
-            set_serial_settings_ack_recv: set_serial_settings_ack_recv,
-            set_serial_settings_ack_send: set_serial_settings_ack_send,
+            summary: channel::<Vec<u8>>(100),
 
-
-            features_send: features_send,
-            features_recv: features_recv,
-            set_features_ack_recv: set_features_ack_recv,
-            set_features_ack_send: set_features_ack_send,
-
-
-            servo_mix_rules_send: servo_mix_rules_send,
-            servo_mix_rules_recv: servo_mix_rules_recv,
-            set_servo_mix_rules_ack_recv: set_servo_mix_rules_ack_recv,
-            set_servo_mix_rules_ack_send: set_servo_mix_rules_ack_send,
-
-
-            summary_send: summary_send,
-            summary_recv: summary_recv,
-            chunk_send: chunk_send,
-            chunk_recv: chunk_recv,
+            chunk: channel::<Vec<u8>>(4096),
         };
 	  }
 
@@ -232,31 +172,32 @@ impl INavMsp {
         INavMsp::process_route(
             self.core.clone(),
 
-            self.mode_ranges_send.clone(),
-            self.set_mode_range_ack_send.clone(),
+            self.mode_ranges.0.clone(),
+            self.set_mode_range_ack.0.clone(),
 
-            self.motor_mixers_send.clone(),
-            self.set_motor_mixer_ack_send.clone(),
+            self.motor_mixers.0.clone(),
+            self.set_motor_mixer_ack.0.clone(),
 
-            self.osd_configs_send.clone(),
-            self.set_osd_config_ack_send.clone(),
+            self.osd_configs.0.clone(),
+            self.set_osd_config_ack.0.clone(),
 
-            self.serial_settings_send.clone(),
-            self.set_serial_settings_ack_send.clone(),
+            self.serial_settings.0.clone(),
+            self.set_serial_settings_ack.0.clone(),
 
-            self.features_send.clone(),
-            self.set_features_ack_send.clone(),
+            self.features.0.clone(),
+            self.set_features_ack.0.clone(),
 
-            self.servo_mix_rules_send.clone(),
-            self.set_servo_mix_rules_ack_send.clone(),
+            self.servo_mix_rules.0.clone(),
+            self.set_servo_mix_rules_ack.0.clone(),
 
-            self.summary_send.clone(),
-            self.chunk_send.clone(),
+            self.summary.0.clone(),
+            self.chunk.0.clone(),
         );
     }
 
     fn process_route(
         core: core::Core,
+
         mode_ranges_send: Sender<Vec<u8>>,
         set_mode_range_ack_send: Sender<()>,
 
@@ -332,7 +273,7 @@ impl INavMsp {
 
         return FlashDataFile {
             core: self.core.clone(),
-            chunk_recv: self.chunk_recv.clone(),
+            chunk_recv: self.chunk.1.clone(),
             used_size: used_size,
             next_address: 0u32,
             received_address: 0u32,
@@ -399,7 +340,7 @@ impl INavMsp {
 
             loop {
                 // TODO: maybe let the caller handle the timeout?
-                let timeout_res = future::timeout(Duration::from_millis(500), self.chunk_recv.recv()).await;
+                let timeout_res = future::timeout(Duration::from_millis(500), self.chunk.1.recv()).await;
 
                 if !timeout_res.is_ok() {
                     self.core.reset_parser().await;
@@ -445,7 +386,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.summary_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(500), self.summary.1.recv()).await;
 
         if !timeout_res.is_ok() {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for summary response"));
@@ -477,7 +418,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_mode_range_ack_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_mode_range_ack.1.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
         }
@@ -498,7 +439,7 @@ impl INavMsp {
         // TODO: what if we are reading packet that was sent long time ago
         // TODO: also currently if no one is reading the channges, we may hang
 
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.mode_ranges_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(5000), self.mode_ranges.1.recv()).await;
         if !timeout_res.is_ok() {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get mode ranges response"));
         }
@@ -542,7 +483,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_motor_mixer_ack_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_motor_mixer_ack.1.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
         }
@@ -559,7 +500,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.motor_mixers_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(5000), self.motor_mixers.1.recv()).await;
         if !timeout_res.is_ok() {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get motor mixers response"));
         }
@@ -599,7 +540,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_osd_config_ack_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_osd_config_ack.1.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
         }
@@ -625,7 +566,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_osd_config_ack_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_osd_config_ack.1.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
         }
@@ -642,7 +583,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.osd_configs_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(5000), self.osd_configs.1.recv()).await;
         if !timeout_res.is_ok() {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get motor mixers response"));
         }
@@ -676,7 +617,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_serial_settings_ack_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_serial_settings_ack.1.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
         }
@@ -693,7 +634,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.serial_settings_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(5000), self.serial_settings.1.recv()).await;
         if !timeout_res.is_ok() {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get serial settings response"));
         }
@@ -723,7 +664,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_features_ack_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_features_ack.1.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
         }
@@ -740,7 +681,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.features_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(5000), self.features.1.recv()).await;
         if !timeout_res.is_ok() {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get features response"));
         }
@@ -760,7 +701,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_servo_mix_rules_ack_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(500), self.set_servo_mix_rules_ack.1.recv()).await;
         if timeout_res.is_ok() {
             return Ok(timeout_res.unwrap().unwrap());
         }
@@ -777,7 +718,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.servo_mix_rules_recv.recv()).await;
+        let timeout_res = future::timeout(Duration::from_millis(5000), self.servo_mix_rules.1.recv()).await;
         if !timeout_res.is_ok() {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get servo mixer rules response"));
         }
