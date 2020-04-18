@@ -269,7 +269,7 @@ impl INavMsp {
     pub async fn open_flash_data(&self) -> FlashDataFile {
         // await for summary
         let summary = self.flash_summary().await;
-        let used_size = summary.unwrap().used_size_bytes;
+        let used_size = summary.used_size_bytes;
 
         return FlashDataFile {
             core: self.core.clone(),
@@ -301,7 +301,7 @@ impl INavMsp {
     pub async fn read_flash_data(&self, chunk_size: usize, callback: fn(chunk: usize, total: usize)) -> io::Result<Vec<u8>> {
         // await for summary
         let summary = self.flash_summary().await;
-        let used_size = summary.unwrap().used_size_bytes as usize;
+        let used_size = summary.used_size_bytes as usize;
 
         // let chunk_size = 0x800u32;
         // let chunk_size = 0x1000u32; // no point going more then this size because inav won't return bigger chunk
@@ -377,7 +377,7 @@ impl INavMsp {
         }
 	  }
 
-    pub async fn flash_summary(&self) -> io::Result<MspDataFlashSummaryReply> {
+    pub async fn flash_summary(&self) -> MspDataFlashSummaryReply {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_DATAFLASH_SUMMARY as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -386,20 +386,13 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.summary.1.recv()).await;
-
-        if !timeout_res.is_ok() {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for summary response"));
-        }
-
-        let payload = timeout_res.unwrap().unwrap();
+        let payload = self.summary.1.recv().await.unwrap();
         let summary = MspDataFlashSummaryReply::unpack_from_slice(&payload).unwrap();
 
-        return Ok(summary);
+        return summary;
 	  }
 
-    pub async fn set_mode_range(&self, mode: ModeRange) -> io::Result<()> {
-
+    pub async fn set_mode_range(&self, mode: ModeRange) {
         let payload = MspSetModeRange {
             index: mode.index,
             mode_range: MspModeRange {
@@ -418,12 +411,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_mode_range_ack.1.recv()).await;
-        if timeout_res.is_ok() {
-            return Ok(timeout_res.unwrap().unwrap());
-        }
-
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set mode range response"));
+        self.set_mode_range_ack.1.recv().await.unwrap();
 	  }
 
     pub async fn get_mode_ranges(&self) -> io::Result<Vec<ModeRange>> {
@@ -438,13 +426,7 @@ impl INavMsp {
         // TODO: we are not sure this ack is for our request, because there is no id for the request
         // TODO: what if we are reading packet that was sent long time ago
         // TODO: also currently if no one is reading the channges, we may hang
-
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.mode_ranges.1.recv()).await;
-        if !timeout_res.is_ok() {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get mode ranges response"));
-        }
-
-        let payload = timeout_res.unwrap().unwrap();
+        let payload = self.mode_ranges.1.recv().await.unwrap();
 
         let mut ranges = vec![];
         let len = MspModeRange::packed_bytes();
@@ -463,8 +445,7 @@ impl INavMsp {
         return Ok(ranges);
 	  }
 
-    pub async fn set_motor_mixer(&self, mmix: MotorMixer) -> io::Result<()> {
-
+    pub async fn set_motor_mixer(&self, mmix: MotorMixer) {
         let payload = MspSetMotorMixer {
             index: mmix.index,
             motor_mixer: MspMotorMixer {
@@ -483,15 +464,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_motor_mixer_ack.1.recv()).await;
-        if timeout_res.is_ok() {
-            return Ok(timeout_res.unwrap().unwrap());
-        }
-
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set mode range response"));
+        self.set_motor_mixer_ack.1.recv().await.unwrap();
 	  }
 
-    pub async fn get_motor_mixers(&self) -> io::Result<Vec<MotorMixer>> {
+    pub async fn get_motor_mixers(&self) -> Vec<MotorMixer> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_MOTOR_MIXER as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -500,12 +476,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.motor_mixers.1.recv()).await;
-        if !timeout_res.is_ok() {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get motor mixers response"));
-        }
-
-        let payload = timeout_res.unwrap().unwrap();
+        let payload = self.motor_mixers.1.recv().await.unwrap();
 
         let mut mmixers = vec![];
         let len = MspMotorMixer::packed_bytes();
@@ -523,10 +494,10 @@ impl INavMsp {
             }
         }
 
-        return Ok(mmixers);
+        return mmixers;
 	  }
 
-    pub async fn set_osd_config_item(&self, id: u8, item: OsdItemPosition) -> io::Result<()> {
+    pub async fn set_osd_config_item(&self, id: u8, item: OsdItemPosition) {
         let payload = MspSetOsdLayout {
             item_index: id,
             item: item,
@@ -540,16 +511,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_osd_config_ack.1.recv()).await;
-        if timeout_res.is_ok() {
-            return Ok(timeout_res.unwrap().unwrap());
-        }
-
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set osd layout response"));
-
+        self.set_osd_config_ack.1.recv().await.unwrap();
     }
 
-    pub async fn set_osd_config(&self, config: OsdConfig) -> io::Result<()> {
+    pub async fn set_osd_config(&self, config: OsdConfig) {
         // if -1 will set different kinds of configurations else the laytout id
         // but when fetching it always returns everything with correct osd_support
         // so it seems to set everything we need to call it twice, once with -1 and then with the real value
@@ -566,15 +531,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_osd_config_ack.1.recv()).await;
-        if timeout_res.is_ok() {
-            return Ok(timeout_res.unwrap().unwrap());
-        }
-
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set osd layout response"));
+        return self.set_osd_config_ack.1.recv().await.unwrap();
 	  }
 
-    pub async fn get_osd_settings(&self) -> io::Result<OsdSettings> {
+    pub async fn get_osd_settings(&self) -> OsdSettings {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_OSD_CONFIG as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -583,12 +543,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.osd_configs.1.recv()).await;
-        if !timeout_res.is_ok() {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get motor mixers response"));
-        }
-
-        let payload = timeout_res.unwrap().unwrap();
+        let payload = self.osd_configs.1.recv().await.unwrap();
 
         let header_len = MspSetGetOsdConfig::packed_bytes();
         let osd_set_get_reply = MspSetGetOsdConfig::unpack_from_slice(&payload[..header_len]).unwrap();
@@ -600,14 +555,14 @@ impl INavMsp {
             item_positions.push(item_pos);
         }
 
-        return Ok(OsdSettings {
+        return OsdSettings {
             osd_support: osd_set_get_reply.item_index,
             config: osd_set_get_reply.config,
             item_positions: item_positions,
-        });
+        };
 	  }
 
-    pub async fn set_serial_settings(&self, serials: Vec<SerialSetting>) -> io::Result<()> {
+    pub async fn set_serial_settings(&self, serials: Vec<SerialSetting>) {
         let payload = serials.iter().flat_map(|s| s.pack().to_vec()).collect();
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_SET_SERIAL_CONFIG as u16,
@@ -617,15 +572,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_serial_settings_ack.1.recv()).await;
-        if timeout_res.is_ok() {
-            return Ok(timeout_res.unwrap().unwrap());
-        }
-
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set serial settings response"));
+        return self.set_serial_settings_ack.1.recv().await.unwrap();
 	  }
 
-    pub async fn get_serial_settings(&self) -> io::Result<Vec<SerialSetting>> {
+    pub async fn get_serial_settings(&self) -> Vec<SerialSetting> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_SERIAL_CONFIG as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -634,12 +584,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.serial_settings.1.recv()).await;
-        if !timeout_res.is_ok() {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get serial settings response"));
-        }
-
-        let payload = timeout_res.unwrap().unwrap();
+        let payload = self.serial_settings.1.recv().await.unwrap();
 
         let mut serials = vec![];
         let len = SerialSetting::packed_bytes();
@@ -651,11 +596,10 @@ impl INavMsp {
             }
         }
 
-        return Ok(serials);
+        return serials;
 	  }
 
-    pub async fn set_features(&self, features: MspFeatures) -> io::Result<()> {
-        // let payload = serials.iter().flat_map(|s| s.pack().to_vec()).collect();
+    pub async fn set_features(&self, features: MspFeatures) {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SET_FEATURE as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -663,16 +607,10 @@ impl INavMsp {
         };
 
         self.core.write(packet).await;
-
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_features_ack.1.recv()).await;
-        if timeout_res.is_ok() {
-            return Ok(timeout_res.unwrap().unwrap());
-        }
-
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set features response"));
+        return self.set_features_ack.1.recv().await.unwrap();
 	  }
 
-    pub async fn get_features(&self) -> io::Result<MspFeatures> {
+    pub async fn get_features(&self) -> MspFeatures {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_FEATURE as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -681,17 +619,12 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.features.1.recv()).await;
-        if !timeout_res.is_ok() {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get features response"));
-        }
+        let payload = self.features.1.recv().await.unwrap();
 
-        let payload = timeout_res.unwrap().unwrap();
-
-        return Ok(MspFeatures::unpack_from_slice(&payload).unwrap());
+        return MspFeatures::unpack_from_slice(&payload).unwrap();
 	  }
 
-    pub async fn set_servo_mix_rules(&self, servo_mix_rules: Vec<MspServoMixRule>) -> io::Result<()> {
+    pub async fn set_servo_mix_rules(&self, servo_mix_rules: Vec<MspServoMixRule>) {
         let payload = servo_mix_rules.iter().flat_map(|s| s.pack().to_vec()).collect();
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SET_SERVO_MIX_RULE as u16,
@@ -701,15 +634,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(500), self.set_servo_mix_rules_ack.1.recv()).await;
-        if timeout_res.is_ok() {
-            return Ok(timeout_res.unwrap().unwrap());
-        }
-
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for set servo mix response"));
+        return self.set_servo_mix_rules_ack.1.recv().await.unwrap();
 	  }
 
-    pub async fn get_servo_mix_rules(&self) -> io::Result<Vec<MspServoMixRule>> {
+    pub async fn get_servo_mix_rules(&self) -> Vec<MspServoMixRule> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SERVO_MIX_RULES as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -718,12 +646,7 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let timeout_res = future::timeout(Duration::from_millis(5000), self.servo_mix_rules.1.recv()).await;
-        if !timeout_res.is_ok() {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "timedout waiting for get servo mixer rules response"));
-        }
-
-        let payload = timeout_res.unwrap().unwrap();
+        let payload = self.servo_mix_rules.1.recv().await.unwrap();
 
         let mut rules = vec![];
         let len = MspServoMixRule::packed_bytes();
@@ -735,6 +658,7 @@ impl INavMsp {
             }
         }
 
-        return Ok(rules);
+        return rules;
+	  }
 	  }
 }
