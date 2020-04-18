@@ -128,6 +128,9 @@ pub struct INavMsp {
     servo_mix_rules: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
     set_servo_mix_rules_ack: (Sender<()>, Receiver<()>),
 
+    rx_map: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    set_rx_map_ack: (Sender<()>, Receiver<()>),
+
     summary: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
 
     chunk: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
@@ -158,6 +161,9 @@ impl INavMsp {
 
             servo_mix_rules: channel::<Vec<u8>>(100),
             set_servo_mix_rules_ack: channel::<()>(100),
+
+            rx_map: channel::<Vec<u8>>(100),
+            set_rx_map_ack: channel::<()>(100),
 
             summary: channel::<Vec<u8>>(100),
 
@@ -190,6 +196,9 @@ impl INavMsp {
             self.servo_mix_rules.0.clone(),
             self.set_servo_mix_rules_ack.0.clone(),
 
+            self.rx_map.0.clone(),
+            self.set_rx_map_ack.0.clone(),
+
             self.summary.0.clone(),
             self.chunk.0.clone(),
         );
@@ -215,6 +224,9 @@ impl INavMsp {
 
         servo_mix_rules_send: Sender<Vec<u8>>,
         set_servo_mix_rules_ack_send: Sender<()>,
+
+        rx_map_send: Sender<Vec<u8>>,
+        set_rx_map_ack_send: Sender<()>,
 
         summary_send: Sender<Vec<u8>>,
 
@@ -251,6 +263,9 @@ impl INavMsp {
 
                     Some(MspCommandCode::MSP_SERVO_MIX_RULES) => servo_mix_rules_send.send(packet.data).await,
                     Some(MspCommandCode::MSP_SET_SERVO_MIX_RULE) => set_servo_mix_rules_ack_send.send(()).await,
+
+                    Some(MspCommandCode::MSP_RX_MAP) => rx_map_send.send(packet.data).await,
+                    Some(MspCommandCode::MSP_SET_RX_MAP) => set_rx_map_ack_send.send(()).await,
 
                     Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => summary_send.send(packet.data).await,
 
@@ -660,5 +675,30 @@ impl INavMsp {
 
         return rules;
 	  }
+
+    pub async fn set_rx_map_rules(&self, rx_map: MspRxMap) {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_SET_RX_MAP as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: rx_map.pack().to_vec(),
+        };
+
+        self.core.write(packet).await;
+
+        return self.set_rx_map_ack.1.recv().await.unwrap();
+	  }
+
+    pub async fn get_rx_map_rules(&self) -> MspRxMap {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_RX_MAP as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.core.write(packet).await;
+
+        let payload = self.rx_map.1.recv().await.unwrap();
+
+        return MspRxMap::unpack_from_slice(&payload).unwrap();
 	  }
 }
