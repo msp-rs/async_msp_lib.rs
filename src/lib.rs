@@ -49,6 +49,14 @@ pub struct FlashDataFile {
     received_address: u32,
 }
 
+#[derive(Debug)]
+pub struct SettingInfo {
+    pub info: MspSettingInfo,
+    pub name: String,
+    pub value: Vec<u8>,
+    pub enum_names: Vec<String>,
+}
+
 // TODO: we should return interface that implements async_std::io::Read trait
 // TODO: why not return move the payload vec instead of the io result??
 impl FlashDataFile {
@@ -131,6 +139,10 @@ pub struct INavMsp {
     rx_map: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
     set_rx_map_ack: (Sender<()>, Receiver<()>),
 
+    pg_settings: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    setting_info: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    set_setting_ack: (Sender<()>, Receiver<()>),
+
     summary: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
 
     chunk: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
@@ -164,6 +176,10 @@ impl INavMsp {
 
             rx_map: channel::<Vec<u8>>(100),
             set_rx_map_ack: channel::<()>(100),
+
+            pg_settings: channel::<Vec<u8>>(100),
+            setting_info: channel::<Vec<u8>>(100),
+            set_setting_ack: channel::<()>(100),
 
             summary: channel::<Vec<u8>>(100),
 
@@ -199,6 +215,10 @@ impl INavMsp {
             self.rx_map.0.clone(),
             self.set_rx_map_ack.0.clone(),
 
+            self.pg_settings.0.clone(),
+            self.setting_info.0.clone(),
+            self.set_setting_ack.0.clone(),
+
             self.summary.0.clone(),
             self.chunk.0.clone(),
         );
@@ -227,6 +247,10 @@ impl INavMsp {
 
         rx_map_send: Sender<Vec<u8>>,
         set_rx_map_ack_send: Sender<()>,
+
+        pg_settings: Sender<Vec<u8>>,
+        setting_info: Sender<Vec<u8>>,
+        set_setting_ack: Sender<()>,
 
         summary_send: Sender<Vec<u8>>,
 
@@ -267,12 +291,18 @@ impl INavMsp {
                     Some(MspCommandCode::MSP_RX_MAP) => rx_map_send.send(packet.data).await,
                     Some(MspCommandCode::MSP_SET_RX_MAP) => set_rx_map_ack_send.send(()).await,
 
+                    Some(MspCommandCode::MSP2_COMMON_PG_LIST) => pg_settings.send(packet.data).await,
+                    Some(MspCommandCode::MSP2_COMMON_SETTING_INFO) => setting_info.send(packet.data).await,
+                    Some(MspCommandCode::MSP2_COMMON_SET_SETTING) => set_setting_ack.send(()).await,
+
                     Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => summary_send.send(packet.data).await,
 
                     Some(MspCommandCode::MSP_DATAFLASH_READ) => chunk_send.send(packet.data).await,
 
                     _ => (),
                 }
+
+                // TODO: listen to msp error message, and notify the appropriate channel. use future.race
                 // TODO: create debug(--verbose) flag for additional print on demand
             }
         });
@@ -337,6 +367,7 @@ impl INavMsp {
 
         let mut accumulated_payload = vec![vec![]; blocks_count as usize];
         loop {
+            // TODO: make it fold async
             for addr in &expected_address {
                 let payload = MspDataFlashRead {
                     read_address: *addr as u32,
@@ -700,5 +731,110 @@ impl INavMsp {
         let payload = self.rx_map.1.recv().await.unwrap();
 
         return MspRxMap::unpack_from_slice(&payload).unwrap();
+	  }
+
+
+    // TODO: on connection get version from msp, similar to inav configurator and allow to switch features based on this version
+    pub fn str_from_u8_nul_utf8(utf8_src: &[u8]) -> Result<&str, std::str::Utf8Error> {
+        let nul_range_end = utf8_src.iter()
+            .position(|&c| c == b'\0')
+            .unwrap_or(utf8_src.len()); // default to length if no `\0` present
+        ::std::str::from_utf8(&utf8_src[0..nul_range_end])
+    }
+
+    pub async fn set_setting(&self, name: &str, value: &[u8]) {
+        let mut payload = name.as_bytes().to_vec();
+        payload.push(b'\0');
+        payload.extend(value);
+
+        // either send \0 then 2 bytes of id
+        // or send null terminated string, name of the setting
+        // the rest of the data is the value.
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_COMMON_SET_SETTING as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: payload,
+        };
+
+        self.core.write(packet).await;
+
+        self.set_setting_ack.1.recv().await.unwrap();
+	  }
+
+    pub async fn get_setting_info(&self, id: &u16) -> SettingInfo {
+        // then we can use MSP2_COMMON_SETTING to get the setting element count
+        // if Payload starts with a zero '\0', then it will treat next u16 bytes as setting index
+        // then we info where to find the setting in the setting table
+
+        let req_payload = MspSettingInfoRequest {
+            null: 0,
+            id: *id
+        };
+
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_COMMON_SETTING_INFO as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: req_payload.pack().to_vec(),
+        };
+
+        self.core.write(packet).await;
+
+        let payload = self.setting_info.1.recv().await.unwrap();
+
+        let name = INavMsp::str_from_u8_nul_utf8(&payload).unwrap();
+        let len = MspSettingInfo::packed_bytes();
+        let mut index = name.len() + 1;
+        let setting_info = MspSettingInfo::unpack_from_slice(&payload[index..index + len]).unwrap();
+
+        index += len;
+
+        let mut enum_values = vec![];
+        if setting_info.setting_mode == SettingMode::ModeLookup {
+            for _ in setting_info.min..setting_info.max + 1 {
+                let enum_value = INavMsp::str_from_u8_nul_utf8(&payload[index..]).unwrap();
+                index += enum_value.len() + 1;
+                enum_values.push(enum_value);
+            }
+        }
+
+        // value in the leftovers
+        let value = &payload[index..];
+
+        // TODO: can i get default setting value?
+
+        return SettingInfo {
+            name: String::from(name),
+            value: value.to_vec(),
+            info: setting_info,
+            enum_names: enum_values.iter().map(|&s| String::from(s)).collect(),
+        };
+	  }
+
+    // calling pg list will get all the settings groups list (the PG groups)
+    // it will return the start of the group and the end of the group
+
+    // 2 bytes, group id ... 0 is invalid
+    // 2 bytes start of the setting index, this is not a memory
+    // 2 bytes last setting index, this is not a memroy
+    pub async fn get_pg_settings(&self) -> Vec<MspSettingGroup> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_COMMON_PG_LIST as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![], // pass nothing to get all settings
+        };
+
+        self.core.write(packet).await;
+
+        let payload = self.pg_settings.1.recv().await.unwrap();
+
+        let mut setting_ids = vec![];
+        let len = MspSettingGroup::packed_bytes();
+
+        for i in (0..payload.len()).step_by(len) {
+            let setting_id = MspSettingGroup::unpack_from_slice(&payload[i..i+len]).unwrap();
+            setting_ids.push(setting_id);
+        }
+
+        return setting_ids;
 	  }
 }
