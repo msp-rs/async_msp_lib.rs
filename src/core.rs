@@ -79,9 +79,7 @@ impl Core {
                     Ok(bytes) => {
                         for n in 0..bytes {
                             match (*parser_locked.lock().await).parse(serial_buf[n]) {
-                                Ok(Some(p)) => {
-                                    msp_reader_send.send(p).await
-                                },
+                                Ok(Some(p)) => msp_reader_send.send(p).await,
                                 Err(e) => eprintln!("bad crc {:?}", e),
                                 Ok(None) => ()
                             }

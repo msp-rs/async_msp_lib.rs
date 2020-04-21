@@ -42,7 +42,7 @@ pub struct MotorMixer {
 
 pub struct FlashDataFile {
     core: core::Core,
-    chunk_recv: Receiver<Vec<u8>>,
+    chunk_recv: Receiver<Result<Vec<u8>, ()>>,
     used_size: u32,
     next_address: u32,
     // requested_address: u32,
@@ -89,7 +89,7 @@ impl FlashDataFile {
                 match timeout_res.unwrap() {
                     None => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
                     Some(payload) => {
-                        let packet = INavMsp::parse_chunk(payload);
+                        let packet = INavMsp::parse_chunk(payload.unwrap());
 
                         if packet.read_address >= self.next_address {
                             self.received_address = packet.read_address;
@@ -118,34 +118,34 @@ impl FlashDataFile {
 pub struct INavMsp {
     core: core::Core,
 
-    mode_ranges: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    set_mode_range_ack: (Sender<()>, Receiver<()>),
+    mode_ranges: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    set_mode_range_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
-    motor_mixers: (Sender<Vec<u8>>,Receiver<Vec<u8>>),
-    set_motor_mixer_ack: (Sender<()>, Receiver<()>),
+    motor_mixers: (Sender<Result<Vec<u8>, ()>>,Receiver<Result<Vec<u8>, ()>>),
+    set_motor_mixer_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
-    osd_configs: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    set_osd_config_ack: (Sender<()>,Receiver<()>),
+    osd_configs: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    set_osd_config_ack: (Sender<Result<Vec<u8>, ()>>,Receiver<Result<Vec<u8>, ()>>),
 
-    serial_settings: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    set_serial_settings_ack: (Sender<()>, Receiver<()>),
+    serial_settings: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    set_serial_settings_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
-    features: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    set_features_ack: (Sender<()>, Receiver<()>),
+    features: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    set_features_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
-    servo_mix_rules: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    set_servo_mix_rules_ack: (Sender<()>, Receiver<()>),
+    servo_mix_rules: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    set_servo_mix_rules_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
-    rx_map: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    set_rx_map_ack: (Sender<()>, Receiver<()>),
+    rx_map: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    set_rx_map_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
-    pg_settings: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    setting_info: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
-    set_setting_ack: (Sender<()>, Receiver<()>),
+    pg_settings: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    setting_info: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    set_setting_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
-    summary: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    summary: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
-    chunk: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    chunk: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 }
 
 impl INavMsp {
@@ -156,34 +156,34 @@ impl INavMsp {
         return INavMsp {
             core: core,
 
-            mode_ranges: channel::<Vec<u8>>(100),
-            set_mode_range_ack: channel::<()>(100),
+            mode_ranges: channel::<Result<Vec<u8>, ()>>(100),
+            set_mode_range_ack: channel::<Result<Vec<u8>, ()>>(100),
 
-            motor_mixers: channel::<Vec<u8>>(100),
-            set_motor_mixer_ack: channel::<()>(100),
+            motor_mixers: channel::<Result<Vec<u8>, ()>>(100),
+            set_motor_mixer_ack: channel::<Result<Vec<u8>, ()>>(100),
 
-            osd_configs: channel::<Vec<u8>>(100),
-            set_osd_config_ack: channel::<()>(100),
+            osd_configs: channel::<Result<Vec<u8>, ()>>(100),
+            set_osd_config_ack: channel::<Result<Vec<u8>, ()>>(100),
 
-            serial_settings: channel::<Vec<u8>>(100),
-            set_serial_settings_ack: channel::<()>(100),
+            serial_settings: channel::<Result<Vec<u8>, ()>>(100),
+            set_serial_settings_ack: channel::<Result<Vec<u8>, ()>>(100),
 
-            features: channel::<Vec<u8>>(100),
-            set_features_ack: channel::<()>(100),
+            features: channel::<Result<Vec<u8>, ()>>(100),
+            set_features_ack: channel::<Result<Vec<u8>, ()>>(100),
 
-            servo_mix_rules: channel::<Vec<u8>>(100),
-            set_servo_mix_rules_ack: channel::<()>(100),
+            servo_mix_rules: channel::<Result<Vec<u8>, ()>>(100),
+            set_servo_mix_rules_ack: channel::<Result<Vec<u8>, ()>>(100),
 
-            rx_map: channel::<Vec<u8>>(100),
-            set_rx_map_ack: channel::<()>(100),
+            rx_map: channel::<Result<Vec<u8>, ()>>(100),
+            set_rx_map_ack: channel::<Result<Vec<u8>, ()>>(100),
 
-            pg_settings: channel::<Vec<u8>>(100),
-            setting_info: channel::<Vec<u8>>(100),
-            set_setting_ack: channel::<()>(100),
+            pg_settings: channel::<Result<Vec<u8>, ()>>(100),
+            setting_info: channel::<Result<Vec<u8>, ()>>(100),
+            set_setting_ack: channel::<Result<Vec<u8>, ()>>(100),
 
-            summary: channel::<Vec<u8>>(100),
+            summary: channel::<Result<Vec<u8>, ()>>(100),
 
-            chunk: channel::<Vec<u8>>(4096),
+            chunk: channel::<Result<Vec<u8>, ()>>(4096),
         };
 	  }
 
@@ -227,34 +227,34 @@ impl INavMsp {
     fn process_route(
         core: core::Core,
 
-        mode_ranges_send: Sender<Vec<u8>>,
-        set_mode_range_ack_send: Sender<()>,
+        mode_ranges_send: Sender<Result<Vec<u8>, ()>>,
+        set_mode_range_ack_send: Sender<Result<Vec<u8>, ()>>,
 
-        motor_mixers_send: Sender<Vec<u8>>,
-        set_motor_mixer_ack_send: Sender<()>,
+        motor_mixers_send: Sender<Result<Vec<u8>, ()>>,
+        set_motor_mixer_ack_send: Sender<Result<Vec<u8>, ()>>,
 
-        osd_configs_send: Sender<Vec<u8>>,
-        set_osd_config_ack_send: Sender<()>,
+        osd_configs_send: Sender<Result<Vec<u8>, ()>>,
+        set_osd_config_ack_send: Sender<Result<Vec<u8>, ()>>,
 
-        serial_settings_send: Sender<Vec<u8>>,
-        set_serial_settings_ack_send: Sender<()>,
+        serial_settings_send: Sender<Result<Vec<u8>, ()>>,
+        set_serial_settings_ack_send: Sender<Result<Vec<u8>, ()>>,
 
-        features_send: Sender<Vec<u8>>,
-        set_features_ack_send: Sender<()>,
+        features_send: Sender<Result<Vec<u8>, ()>>,
+        set_features_ack_send: Sender<Result<Vec<u8>, ()>>,
 
-        servo_mix_rules_send: Sender<Vec<u8>>,
-        set_servo_mix_rules_ack_send: Sender<()>,
+        servo_mix_rules_send: Sender<Result<Vec<u8>, ()>>,
+        set_servo_mix_rules_ack_send: Sender<Result<Vec<u8>, ()>>,
 
-        rx_map_send: Sender<Vec<u8>>,
-        set_rx_map_ack_send: Sender<()>,
+        rx_map_send: Sender<Result<Vec<u8>, ()>>,
+        set_rx_map_ack_send: Sender<Result<Vec<u8>, ()>>,
 
-        pg_settings: Sender<Vec<u8>>,
-        setting_info: Sender<Vec<u8>>,
-        set_setting_ack: Sender<()>,
+        pg_settings: Sender<Result<Vec<u8>, ()>>,
+        setting_info: Sender<Result<Vec<u8>, ()>>,
+        set_setting_ack: Sender<Result<Vec<u8>, ()>>,
 
-        summary_send: Sender<Vec<u8>>,
+        summary_send: Sender<Result<Vec<u8>, ()>>,
 
-        chunk_send: Sender<Vec<u8>>,
+        chunk_send: Sender<Result<Vec<u8>, ()>>,
     ) {
         task::spawn(async move {
             loop {
@@ -263,46 +263,49 @@ impl INavMsp {
                     Some(packet) => packet,
                 };
 
-                if packet.direction != MspPacketDirection::FromFlightController {
-                    continue;
-                }
+                // println!("{:?}", packet);
 
                 let cmd = MspCommandCode::from_primitive(packet.cmd);
 
-                match cmd {
-                    Some(MspCommandCode::MSP_MODE_RANGES) => mode_ranges_send.send(packet.data).await,
-                    Some(MspCommandCode::MSP_SET_MODE_RANGE) => set_mode_range_ack_send.send(()).await,
+                let result = match packet.direction {
+                    MspPacketDirection::FromFlightController => Ok(packet.data),
+                    MspPacketDirection::Unsupported => Err(()),
+                    _ => continue,
+                };
 
-                    Some(MspCommandCode::MSP2_MOTOR_MIXER) => motor_mixers_send.send(packet.data).await,
-                    Some(MspCommandCode::MSP2_SET_MOTOR_MIXER) => set_motor_mixer_ack_send.send(()).await,
+                let channel = match cmd {
+                    Some(MspCommandCode::MSP_MODE_RANGES) => &mode_ranges_send,
+                    Some(MspCommandCode::MSP_SET_MODE_RANGE) => &set_mode_range_ack_send,
 
-                    Some(MspCommandCode::MSP_OSD_CONFIG) => osd_configs_send.send(packet.data).await,
-                    Some(MspCommandCode::MSP_SET_OSD_CONFIG) => set_osd_config_ack_send.send(()).await,
+                    Some(MspCommandCode::MSP2_MOTOR_MIXER) => &motor_mixers_send,
+                    Some(MspCommandCode::MSP2_SET_MOTOR_MIXER) => &set_motor_mixer_ack_send,
 
-                    Some(MspCommandCode::MSP2_SERIAL_CONFIG) => serial_settings_send.send(packet.data).await,
-                    Some(MspCommandCode::MSP2_SET_SERIAL_CONFIG) => set_serial_settings_ack_send.send(()).await,
+                    Some(MspCommandCode::MSP_OSD_CONFIG) => &osd_configs_send,
+                    Some(MspCommandCode::MSP_SET_OSD_CONFIG) => &set_osd_config_ack_send,
 
-                    Some(MspCommandCode::MSP_FEATURE) => features_send.send(packet.data).await,
-                    Some(MspCommandCode::MSP_SET_FEATURE) => set_features_ack_send.send(()).await,
+                    Some(MspCommandCode::MSP2_SERIAL_CONFIG) => &serial_settings_send,
+                    Some(MspCommandCode::MSP2_SET_SERIAL_CONFIG) => &set_serial_settings_ack_send,
 
-                    Some(MspCommandCode::MSP_SERVO_MIX_RULES) => servo_mix_rules_send.send(packet.data).await,
-                    Some(MspCommandCode::MSP_SET_SERVO_MIX_RULE) => set_servo_mix_rules_ack_send.send(()).await,
+                    Some(MspCommandCode::MSP_FEATURE) => &features_send,
+                    Some(MspCommandCode::MSP_SET_FEATURE) => &set_features_ack_send,
 
-                    Some(MspCommandCode::MSP_RX_MAP) => rx_map_send.send(packet.data).await,
-                    Some(MspCommandCode::MSP_SET_RX_MAP) => set_rx_map_ack_send.send(()).await,
+                    Some(MspCommandCode::MSP_SERVO_MIX_RULES) => &servo_mix_rules_send,
+                    Some(MspCommandCode::MSP_SET_SERVO_MIX_RULE) => &set_servo_mix_rules_ack_send,
 
-                    Some(MspCommandCode::MSP2_COMMON_PG_LIST) => pg_settings.send(packet.data).await,
-                    Some(MspCommandCode::MSP2_COMMON_SETTING_INFO) => setting_info.send(packet.data).await,
-                    Some(MspCommandCode::MSP2_COMMON_SET_SETTING) => set_setting_ack.send(()).await,
+                    Some(MspCommandCode::MSP_RX_MAP) => &rx_map_send,
+                    Some(MspCommandCode::MSP_SET_RX_MAP) => &set_rx_map_ack_send,
 
-                    Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => summary_send.send(packet.data).await,
+                    Some(MspCommandCode::MSP2_COMMON_PG_LIST) => &pg_settings,
+                    Some(MspCommandCode::MSP2_COMMON_SETTING_INFO) => &setting_info,
+                    Some(MspCommandCode::MSP2_COMMON_SET_SETTING) => &set_setting_ack,
 
-                    Some(MspCommandCode::MSP_DATAFLASH_READ) => chunk_send.send(packet.data).await,
+                    Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => &summary_send,
+                    Some(MspCommandCode::MSP_DATAFLASH_READ) => &chunk_send,
 
-                    _ => (),
-                }
+                    _ => continue,
+                };
 
-                // TODO: listen to msp error message, and notify the appropriate channel. use future.race
+                channel.send(result).await;
                 // TODO: create debug(--verbose) flag for additional print on demand
             }
         });
@@ -314,7 +317,7 @@ impl INavMsp {
     /// altought slower then read_flash_data, its a safe data, the reads are happening serialy
     pub async fn open_flash_data(&self) -> FlashDataFile {
         // await for summary
-        let summary = self.flash_summary().await;
+        let summary = self.flash_summary().await.unwrap();
         let used_size = summary.used_size_bytes;
 
         return FlashDataFile {
@@ -347,7 +350,7 @@ impl INavMsp {
     /// coccurent unordered data flash reading, this method assumes data is organazised into equal(except last one) chunks of data
     pub async fn read_flash_data(&self, chunk_size: usize, callback: fn(chunk: usize, total: usize)) -> io::Result<Vec<u8>> {
         // await for summary
-        let summary = self.flash_summary().await;
+        let summary = self.flash_summary().await.unwrap();
         let used_size = summary.used_size_bytes as usize;
 
         // let chunk_size = 0x800u32;
@@ -399,7 +402,7 @@ impl INavMsp {
                 match timeout_res.unwrap() {
                     None => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
                     Some(payload) => {
-                        let packet = INavMsp::parse_chunk(payload);
+                        let packet = INavMsp::parse_chunk(payload.unwrap());
 
                         let idx = match expected_address.binary_search(&(packet.read_address as usize)) {
                             Ok(idx) => idx,
@@ -425,7 +428,7 @@ impl INavMsp {
         }
 	  }
 
-    pub async fn flash_summary(&self) -> MspDataFlashSummaryReply {
+    pub async fn flash_summary(&self) -> Result<MspDataFlashSummaryReply, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_DATAFLASH_SUMMARY as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -434,10 +437,14 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let payload = self.summary.1.recv().await.unwrap();
+        let payload = match self.summary.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get flash summary")
+        };
+
         let summary = MspDataFlashSummaryReply::unpack_from_slice(&payload).unwrap();
 
-        return summary;
+        return Ok(summary);
 	  }
 
 
@@ -460,7 +467,7 @@ impl INavMsp {
     /// }).await;
     /// will ack with the same command
     /// inav.get_mode_ranges().await
-    pub async fn set_mode_range(&self, mode: ModeRange) {
+    pub async fn set_mode_range(&self, mode: ModeRange) -> Result<(), &str>{
         let payload = MspSetModeRange {
             index: mode.index,
             mode_range: MspModeRange {
@@ -479,10 +486,13 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        self.set_mode_range_ack.1.recv().await.unwrap();
+        return match self.set_mode_range_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to set mode range")
+        };
 	  }
 
-    pub async fn get_mode_ranges(&self) -> io::Result<Vec<ModeRange>> {
+    pub async fn get_mode_ranges(&self) -> Result<Vec<ModeRange>, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_MODE_RANGES as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -494,7 +504,10 @@ impl INavMsp {
         // TODO: we are not sure this ack is for our request, because there is no id for the request
         // TODO: what if we are reading packet that was sent long time ago
         // TODO: also currently if no one is reading the channges, we may hang
-        let payload = self.mode_ranges.1.recv().await.unwrap();
+        let payload = match self.mode_ranges.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get mode_ranges")
+        };
 
         let mut ranges = vec![];
         let len = MspModeRange::packed_bytes();
@@ -521,7 +534,7 @@ impl INavMsp {
     ///     yaw: 1000,
     /// }).await;
     /// println!("cli {:?}", inav.get_motor_mixers().await);
-    pub async fn set_motor_mixer(&self, mmix: MotorMixer) {
+    pub async fn set_motor_mixer(&self, mmix: MotorMixer) -> Result<(), &str> {
         let payload = MspSetMotorMixer {
             index: mmix.index,
             motor_mixer: MspMotorMixer {
@@ -540,10 +553,13 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        self.set_motor_mixer_ack.1.recv().await.unwrap();
+        return match self.set_motor_mixer_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to set motor mixer")
+        };
 	  }
 
-    pub async fn get_motor_mixers(&self) -> Vec<MotorMixer> {
+    pub async fn get_motor_mixers(&self) -> Result<Vec<MotorMixer>, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_MOTOR_MIXER as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -552,7 +568,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let payload = self.motor_mixers.1.recv().await.unwrap();
+        let payload = match self.motor_mixers.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get motor mixers")
+        };
 
         let mut mmixers = vec![];
         let len = MspMotorMixer::packed_bytes();
@@ -570,12 +589,12 @@ impl INavMsp {
             }
         }
 
-        return mmixers;
+        return Ok(mmixers);
 	  }
 
     /// inav.set_osd_config_item(116, multiwii_serial_protocol::structs::OsdItemPosition { col: 11u8, row: 22u8 }).await;
     /// println!("osd {:?}", inav.get_osd_settings().await);
-    pub async fn set_osd_config_item(&self, id: u8, item: OsdItemPosition) {
+    pub async fn set_osd_config_item(&self, id: u8, item: OsdItemPosition) -> Result<(), &str> {
         let payload = MspSetOsdLayout {
             item_index: id,
             item: item,
@@ -589,10 +608,13 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        self.set_osd_config_ack.1.recv().await.unwrap();
+        return match self.set_osd_config_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to set osd item")
+        };
     }
 
-    pub async fn set_osd_config(&self, config: OsdConfig) {
+    pub async fn set_osd_config(&self, config: OsdConfig) -> Result<(), &str> {
         // if -1 will set different kinds of configurations else the laytout id
         // but when fetching it always returns everything with correct osd_support
         // so it seems to set everything we need to call it twice, once with -1 and then with the real value
@@ -608,11 +630,13 @@ impl INavMsp {
         };
 
         self.core.write(packet).await;
-
-        return self.set_osd_config_ack.1.recv().await.unwrap();
+        return match self.set_osd_config_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to set osd config")
+        };
 	  }
 
-    pub async fn get_osd_settings(&self) -> OsdSettings {
+    pub async fn get_osd_settings(&self) -> Result<OsdSettings, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_OSD_CONFIG as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -621,7 +645,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let payload = self.osd_configs.1.recv().await.unwrap();
+        let payload = match self.osd_configs.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get osd config")
+        };
 
         let header_len = MspSetGetOsdConfig::packed_bytes();
         let osd_set_get_reply = MspSetGetOsdConfig::unpack_from_slice(&payload[..header_len]).unwrap();
@@ -633,11 +660,11 @@ impl INavMsp {
             item_positions.push(item_pos);
         }
 
-        return OsdSettings {
+        return Ok(OsdSettings {
             osd_support: osd_set_get_reply.item_index,
             config: osd_set_get_reply.config,
             item_positions: item_positions,
-        };
+        });
 	  }
 
     /// let shitty_serials = vec![multiwii_serial_protocol::structs::SerialSetting {
@@ -650,7 +677,7 @@ impl INavMsp {
     /// }];
     /// inav.set_serial_settings(shitty_serials).await;
     /// println!("serial {:?}", inav.get_serial_settings().await);
-    pub async fn set_serial_settings(&self, serials: Vec<SerialSetting>) {
+    pub async fn set_serial_settings(&self, serials: Vec<SerialSetting>) -> Result<(), &str> {
         let payload = serials.iter().flat_map(|s| s.pack().to_vec()).collect();
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_SET_SERIAL_CONFIG as u16,
@@ -660,10 +687,13 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        return self.set_serial_settings_ack.1.recv().await.unwrap();
+        return match self.set_serial_settings_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to set serial settings")
+        };
 	  }
 
-    pub async fn get_serial_settings(&self) -> Vec<SerialSetting> {
+    pub async fn get_serial_settings(&self) -> Result<Vec<SerialSetting>, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_SERIAL_CONFIG as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -672,7 +702,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let payload = self.serial_settings.1.recv().await.unwrap();
+        let payload = match self.serial_settings.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get serial settings")
+        };
 
         let mut serials = vec![];
         let len = SerialSetting::packed_bytes();
@@ -684,7 +717,7 @@ impl INavMsp {
             }
         }
 
-        return serials;
+        return Ok(serials);
 	  }
 
     /// let shitty_features = multiwii_serial_protocol::structs::MspFeatures {
@@ -697,7 +730,7 @@ impl INavMsp {
     /// };
     /// inav.set_features(shitty_features).await;
     /// println!("features {:?}", inav.get_features().await);
-    pub async fn set_features(&self, features: MspFeatures) {
+    pub async fn set_features(&self, features: MspFeatures) -> Result<(), &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SET_FEATURE as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -705,10 +738,13 @@ impl INavMsp {
         };
 
         self.core.write(packet).await;
-        return self.set_features_ack.1.recv().await.unwrap();
+        return match self.set_features_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to set features")
+        };
 	  }
 
-    pub async fn get_features(&self) -> MspFeatures {
+    pub async fn get_features(&self) -> Result<MspFeatures, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_FEATURE as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -717,12 +753,15 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let payload = self.features.1.recv().await.unwrap();
+        let payload = match self.features.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get features")
+        };
 
-        return MspFeatures::unpack_from_slice(&payload).unwrap();
+        return Ok(MspFeatures::unpack_from_slice(&payload).unwrap());
 	  }
 
-    pub async fn set_servo_mix_rules(&self, servo_mix_rules: Vec<MspServoMixRule>) {
+    pub async fn set_servo_mix_rules(&self, servo_mix_rules: Vec<MspServoMixRule>) -> Result<(), &str> {
         let payload = servo_mix_rules.iter().flat_map(|s| s.pack().to_vec()).collect();
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SET_SERVO_MIX_RULE as u16,
@@ -732,11 +771,14 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        return self.set_servo_mix_rules_ack.1.recv().await.unwrap();
+        return match self.set_servo_mix_rules_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to set servo mix rule")
+        };
 	  }
 
     /// println!("servo mixers {:?}", inav.get_servo_mix_rules().await);
-    pub async fn get_servo_mix_rules(&self) -> Vec<MspServoMixRule> {
+    pub async fn get_servo_mix_rules(&self) -> Result<Vec<MspServoMixRule>, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SERVO_MIX_RULES as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -745,7 +787,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let payload = self.servo_mix_rules.1.recv().await.unwrap();
+        let payload = match self.servo_mix_rules.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get servo mix rule")
+        };
 
         let mut rules = vec![];
         let len = MspServoMixRule::packed_bytes();
@@ -757,12 +802,12 @@ impl INavMsp {
             }
         }
 
-        return rules;
+        return Ok(rules);
 	  }
 
     /// inav.set_rx_map_rules(multiwii_serial_protocol::structs::MspRxMap { map: [0,0,0,0]}).await;
     /// println!("features {:?}", inav.get_rx_map_rules().await);
-    pub async fn set_rx_map_rules(&self, rx_map: MspRxMap) {
+    pub async fn set_rx_map_rules(&self, rx_map: MspRxMap) -> Result<(), &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SET_RX_MAP as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -771,10 +816,13 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        return self.set_rx_map_ack.1.recv().await.unwrap();
+        return match self.set_rx_map_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed set rx map rules")
+        };
 	  }
 
-    pub async fn get_rx_map_rules(&self) -> MspRxMap {
+    pub async fn get_rx_map_rules(&self) -> Result<MspRxMap, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_RX_MAP as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -783,9 +831,12 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let payload = self.rx_map.1.recv().await.unwrap();
+        let payload = match self.rx_map.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get rx map rules")
+        };
 
-        return MspRxMap::unpack_from_slice(&payload).unwrap();
+        return Ok(MspRxMap::unpack_from_slice(&payload).unwrap());
 	  }
 
 
@@ -797,7 +848,7 @@ impl INavMsp {
         ::std::str::from_utf8(&utf8_src[0..nul_range_end])
     }
 
-    pub async fn set_setting(&self, name: &str, value: Vec<u8>) {
+    pub async fn set_setting(&self, name: &str, value: Vec<u8>) -> Result<(), &str> {
         let mut payload = name.as_bytes().to_vec();
         payload.push(b'\0');
         payload.extend(value);
@@ -812,17 +863,21 @@ impl INavMsp {
         };
 
         self.core.write(packet).await;
-        self.set_setting_ack.1.recv().await.unwrap();
+
+        return match self.set_setting_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to set setting")
+        };
 	  }
 
-    pub async fn get_setting_info_by_name(&self, name: &str) -> SettingInfo {
+    pub async fn get_setting_info_by_name(&self, name: &str) -> Result<SettingInfo, &str> {
         let mut payload = name.as_bytes().to_vec();
         payload.push(b'\0');
 
         return self.get_setting_info(payload).await;
     }
 
-    pub async fn get_setting_info_by_id(&self, id: &u16) -> SettingInfo {
+    pub async fn get_setting_info_by_id(&self, id: &u16) -> Result<SettingInfo, &str> {
         // then we can use MSP2_COMMON_SETTING to get the setting element count
         // if Payload starts with a zero '\0', then it will treat next u16 bytes as setting index
         // then we info where to find the setting in the setting table
@@ -834,7 +889,7 @@ impl INavMsp {
         return self.get_setting_info(payload.pack().to_vec()).await;
     }
 
-    pub async fn get_setting_info(&self, id: Vec<u8>) -> SettingInfo {
+    pub async fn get_setting_info(&self, id: Vec<u8>) -> Result<SettingInfo, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_COMMON_SETTING_INFO as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -843,7 +898,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let payload = self.setting_info.1.recv().await.unwrap();
+        let payload = match self.setting_info.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get setting info"),
+        };
 
         let name = INavMsp::str_from_u8_nul_utf8(&payload).unwrap();
         let len = MspSettingInfo::packed_bytes();
@@ -866,12 +924,12 @@ impl INavMsp {
 
         // TODO: can i get default setting value?
 
-        return SettingInfo {
+        return Ok(SettingInfo {
             name: String::from(name),
             value: value.to_vec(),
             info: setting_info,
             enum_names: enum_values.iter().map(|&s| String::from(s)).collect(),
-        };
+        });
 	  }
 
     // calling pg list will get all the settings groups list (the PG groups)
@@ -880,7 +938,7 @@ impl INavMsp {
     // 2 bytes, group id ... 0 is invalid
     // 2 bytes start of the setting index, this is not a memory
     // 2 bytes last setting index, this is not a memroy
-    pub async fn get_pg_settings(&self) -> Vec<MspSettingGroup> {
+    pub async fn get_pg_settings(&self) -> Result<Vec<MspSettingGroup>, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_COMMON_PG_LIST as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -889,7 +947,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        let payload = self.pg_settings.1.recv().await.unwrap();
+        let payload = match self.pg_settings.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get pg settings")
+        };
 
         let mut setting_ids = vec![];
         let len = MspSettingGroup::packed_bytes();
@@ -899,6 +960,6 @@ impl INavMsp {
             setting_ids.push(setting_id);
         }
 
-        return setting_ids;
+        return Ok(setting_ids);
 	  }
 }
