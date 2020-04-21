@@ -310,6 +310,7 @@ impl INavMsp {
 
     // TODO: because this is a serial protocol, we cannot allow two reads of the file at the same time.
     //       so throw error, if this function is called while another file is open already
+    // TODO: pass start and end as parameters, the cli should call the summary and get all the total size
     /// altought slower then read_flash_data, its a safe data, the reads are happening serialy
     pub async fn open_flash_data(&self) -> FlashDataFile {
         // await for summary
@@ -342,6 +343,7 @@ impl INavMsp {
     // TODO: move blackbox to sibling module
     // buffer all reads into channel and when function is called receive from that channel
     // so once the file is open, the reading loop starts, and new chunks are pushed into channel and fetched once the read function called on the returned file descriptor
+    // TODO: pass start and end as parameters, the cli should call the summary and get all the total size
     /// coccurent unordered data flash reading, this method assumes data is organazised into equal(except last one) chunks of data
     pub async fn read_flash_data(&self, chunk_size: usize, callback: fn(chunk: usize, total: usize)) -> io::Result<Vec<u8>> {
         // await for summary
@@ -438,6 +440,26 @@ impl INavMsp {
         return summary;
 	  }
 
+
+    /// aux 2 44 6 1300 1400
+    /// TOOD: why the cli box id doesn't match what defined in the fc_msp_box.c
+    /// because the cli command is working by the mode index in fc_msp_box.c, and not the mode id
+    /// configurator ui will actually do the following conversion for box_modes
+    /// start_step - ((value - 900) / 25), 
+    /// end_step - ((value - 900) / 25),
+    ///
+    /// steps are 25 apart
+    /// a value of 0 corresponds to a channel value of 900 or less
+    /// a value of 48 corresponds to a channel value of 2100 or more
+    /// inav.set_mode_range(inav_msp_lib::ModeRange {
+    ///     index: 2,
+    ///     box_id: 53,
+    ///     aux_channel_index: 0,
+    ///     start_step: 47,
+    ///     end_step: 48,
+    /// }).await;
+    /// will ack with the same command
+    /// inav.get_mode_ranges().await
     pub async fn set_mode_range(&self, mode: ModeRange) {
         let payload = MspSetModeRange {
             index: mode.index,
@@ -491,6 +513,14 @@ impl INavMsp {
         return Ok(ranges);
 	  }
 
+    /// inav.set_motor_mixer(inav_msp_lib::MotorMixer {
+    ///     index: 0,
+    ///     throttle: 1000,
+    ///     roll: 3000,
+    ///     pitch: 1000,
+    ///     yaw: 1000,
+    /// }).await;
+    /// println!("cli {:?}", inav.get_motor_mixers().await);
     pub async fn set_motor_mixer(&self, mmix: MotorMixer) {
         let payload = MspSetMotorMixer {
             index: mmix.index,
@@ -543,6 +573,8 @@ impl INavMsp {
         return mmixers;
 	  }
 
+    /// inav.set_osd_config_item(116, multiwii_serial_protocol::structs::OsdItemPosition { col: 11u8, row: 22u8 }).await;
+    /// println!("osd {:?}", inav.get_osd_settings().await);
     pub async fn set_osd_config_item(&self, id: u8, item: OsdItemPosition) {
         let payload = MspSetOsdLayout {
             item_index: id,
@@ -608,6 +640,16 @@ impl INavMsp {
         };
 	  }
 
+    /// let shitty_serials = vec![multiwii_serial_protocol::structs::SerialSetting {
+    ///     index: 6,
+    ///     function_mask: 0,
+    ///     msp_baudrate_index: 0,
+    ///     gps_baudrate_index: 0,
+    ///     telemetry_baudrate_index: 0,
+    ///     peripheral_baudrate_index: 0
+    /// }];
+    /// inav.set_serial_settings(shitty_serials).await;
+    /// println!("serial {:?}", inav.get_serial_settings().await);
     pub async fn set_serial_settings(&self, serials: Vec<SerialSetting>) {
         let payload = serials.iter().flat_map(|s| s.pack().to_vec()).collect();
         let packet = MspPacket {
@@ -645,6 +687,16 @@ impl INavMsp {
         return serials;
 	  }
 
+    /// let shitty_features = multiwii_serial_protocol::structs::MspFeatures {
+    ///     features: [
+    ///         true, true, true, true, true, true, true, true,
+    ///         true, true, true, true, true, true, true, true,
+    ///         true, true, true, true, true, true, true, true,
+    ///         true, true, true, true, true, true, true, true,
+    ///     ]
+    /// };
+    /// inav.set_features(shitty_features).await;
+    /// println!("features {:?}", inav.get_features().await);
     pub async fn set_features(&self, features: MspFeatures) {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SET_FEATURE as u16,
@@ -683,6 +735,7 @@ impl INavMsp {
         return self.set_servo_mix_rules_ack.1.recv().await.unwrap();
 	  }
 
+    /// println!("servo mixers {:?}", inav.get_servo_mix_rules().await);
     pub async fn get_servo_mix_rules(&self) -> Vec<MspServoMixRule> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SERVO_MIX_RULES as u16,
@@ -707,6 +760,8 @@ impl INavMsp {
         return rules;
 	  }
 
+    /// inav.set_rx_map_rules(multiwii_serial_protocol::structs::MspRxMap { map: [0,0,0,0]}).await;
+    /// println!("features {:?}", inav.get_rx_map_rules().await);
     pub async fn set_rx_map_rules(&self, rx_map: MspRxMap) {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SET_RX_MAP as u16,
@@ -742,7 +797,7 @@ impl INavMsp {
         ::std::str::from_utf8(&utf8_src[0..nul_range_end])
     }
 
-    pub async fn set_setting(&self, name: &str, value: &[u8]) {
+    pub async fn set_setting(&self, name: &str, value: Vec<u8>) {
         let mut payload = name.as_bytes().to_vec();
         payload.push(b'\0');
         payload.extend(value);
@@ -757,24 +812,33 @@ impl INavMsp {
         };
 
         self.core.write(packet).await;
-
         self.set_setting_ack.1.recv().await.unwrap();
 	  }
 
-    pub async fn get_setting_info(&self, id: &u16) -> SettingInfo {
+    pub async fn get_setting_info_by_name(&self, name: &str) -> SettingInfo {
+        let mut payload = name.as_bytes().to_vec();
+        payload.push(b'\0');
+
+        return self.get_setting_info(payload).await;
+    }
+
+    pub async fn get_setting_info_by_id(&self, id: &u16) -> SettingInfo {
         // then we can use MSP2_COMMON_SETTING to get the setting element count
         // if Payload starts with a zero '\0', then it will treat next u16 bytes as setting index
         // then we info where to find the setting in the setting table
-
-        let req_payload = MspSettingInfoRequest {
+        let payload = MspSettingInfoRequest {
             null: 0,
             id: *id
         };
 
+        return self.get_setting_info(payload.pack().to_vec()).await;
+    }
+
+    pub async fn get_setting_info(&self, id: Vec<u8>) -> SettingInfo {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_COMMON_SETTING_INFO as u16,
             direction: MspPacketDirection::ToFlightController,
-            data: req_payload.pack().to_vec(),
+            data: id,
         };
 
         self.core.write(packet).await;

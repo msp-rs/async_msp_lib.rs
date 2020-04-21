@@ -60,6 +60,9 @@ impl Core {
     }
 
     // TODO: return joinhandler, so we can stop the tasks on drop
+    // TODO: rewrite using stream api with inspect, each command will inspect
+    //       and passthorugh to next.
+    //       if the stream contained response for command, it will return the read/write function
     fn process_input(
         mut serial: Box<dyn SerialPort>,
         parser_locked: Arc<Mutex<MspParser>>,
