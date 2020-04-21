@@ -12,6 +12,8 @@ async-msp-lib = { version = "0.1.0", path = "../async-msp-lib.rs" }
 serialport = "3.3.0"
 packed_struct = "0.3"
 packed_struct_codegen = "0.3"
+futures = "0.3.4"
+clap-v3 = "~3.0.0-beta.1"
 
 [dependencies.async-std]
 version = "1.5.0"
