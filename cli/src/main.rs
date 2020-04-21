@@ -17,7 +17,7 @@ use async_std::prelude::*;
 
 use std::time::Duration;
 use std::iter::Iterator;
-use futures::future::join_all;
+use futures::future::try_join_all;
 use clap_v3::{App, AppSettings, Arg};
 use multiwii_serial_protocol::structs::{SettingType, SettingMode};
 use std::convert::TryInto;
@@ -107,7 +107,7 @@ async fn main() {
         ("setting", Some(setting_matches)) => {
             match setting_matches.subcommand() {
                 ("list", Some(_)) => {
-                    let pg_settings = inav.get_pg_settings().await;
+                    let pg_settings = inav.get_pg_settings().await.unwrap();
                     let setting_ids: Vec<u16> = pg_settings
                         .iter()
                         .flat_map(|pg_s| (pg_s.start_id..pg_s.end_id).map(u16::from).collect::<Vec<u16>>())
@@ -115,7 +115,7 @@ async fn main() {
                     let setting_info_futures = setting_ids
                         .iter()
                         .map(|id| inav.get_setting_info_by_id(&id));
-                    let all_settings = join_all(setting_info_futures).await;
+                    let all_settings = try_join_all(setting_info_futures).await.unwrap();
                     for s in all_settings {
                         println!("{} {}", s.name, setting_to_str(&s));
                     }
@@ -126,7 +126,7 @@ async fn main() {
                     }
 
                     let name = get_matches.value_of("name").unwrap();
-                    let setting_info = inav.get_setting_info_by_name(&name).await;
+                    let setting_info = inav.get_setting_info_by_name(&name).await.unwrap();
                     println!("{}", setting_to_str(&setting_info));
                 }
                 ("set", Some(set_matches)) => {
@@ -136,9 +136,9 @@ async fn main() {
 
                     let name = set_matches.value_of("name").unwrap();
                     let value = set_matches.value_of("value").unwrap();
-                    let setting_info = inav.get_setting_info_by_name(&name).await;
-                    let payload = setting_to_vec(&setting_info, value);
-                    inav.set_setting(name, payload).await;
+                    let setting_info = inav.get_setting_info_by_name(&name).await.unwrap();
+                    let payload = setting_to_vec(&setting_info, value).unwrap();
+                    inav.set_setting(name, payload).await.unwrap();
                 },
                 ("set-all", Some(set_all_matches)) => {
                     if !set_all_matches.is_present("input") {
@@ -167,16 +167,17 @@ async fn main() {
 
                     println!("fetching settings info");
 
-                    let all_settings = join_all(setting_info_futures).await;
+                    let all_settings = try_join_all(setting_info_futures).await.unwrap();
                     // println!("{:?}", all_settings);
                     let name_buf_valus = all_settings.iter().map(|s| {
                         let val = setting_key_vals.get(&s.name).unwrap();
-                        let buf_val = setting_to_vec(s, val);
+                        let buf_val = setting_to_vec(s, val).unwrap();
                         (&s.name, buf_val)
                     });
                     // TODO: print after every setting set its name
                     let set_setting_futures = name_buf_valus.map(|(n, v)| inav.set_setting(n, v));
-                    join_all(set_setting_futures).await;
+                    println!("writing settings");
+                    try_join_all(set_setting_futures).await.unwrap();
                 },
                 ("", None) => println!("No subcommand was used"),
                 _ => unreachable!(),
@@ -274,21 +275,28 @@ fn setting_to_str(s: &inav_msp_lib::SettingInfo) -> String {
     };
 }
 
-fn setting_to_vec(s: &inav_msp_lib::SettingInfo, value: &str) -> Vec<u8> {
+fn setting_to_vec<'a>(s: &inav_msp_lib::SettingInfo, value: &str) -> Result<Vec<u8>, &'a str> {
     return match s.info.setting_type {
         SettingType::VarUint8 => {
             if s.info.setting_mode == SettingMode::ModeLookup {
-                let index = s.enum_names.iter().position(|r| r == &String::from(value)).unwrap() as u8;
-                return index.to_le_bytes().to_vec();
+                let enum_name = String::from(value);
+                let index = s.enum_names.iter().position(|r| r == &enum_name);
+                return match index {
+                    Some(i) => Ok((i as u8).to_le_bytes().to_vec()),
+                    None => {
+                        eprintln!("Failed to find {} in {}", enum_name, s.enum_names.join(","));
+                        return Err("Failed to find table value");
+                    }
+                }
             }
 
-            return value.parse::<u8>().unwrap().to_le_bytes().to_vec();
+            return Ok(value.parse::<u8>().unwrap().to_le_bytes().to_vec());
         },
-        SettingType::VarInt8 => value.parse::<i8>().unwrap().to_le_bytes().to_vec(),
-        SettingType::VarUint16 => value.parse::<u16>().unwrap().to_le_bytes().to_vec(),
-        SettingType::VarInt16 => value.parse::<i16>().unwrap().to_le_bytes().to_vec(),
-        SettingType::VarUint32 => value.parse::<u32>().unwrap().to_le_bytes().to_vec(),
-        SettingType::VarFloat => value.parse::<f32>().unwrap().to_le_bytes().to_vec(),
-        SettingType::VarString => value.as_bytes().to_vec(),
+        SettingType::VarInt8 => Ok(value.parse::<i8>().unwrap().to_le_bytes().to_vec()),
+        SettingType::VarUint16 => Ok(value.parse::<u16>().unwrap().to_le_bytes().to_vec()),
+        SettingType::VarInt16 => Ok(value.parse::<i16>().unwrap().to_le_bytes().to_vec()),
+        SettingType::VarUint32 => Ok(value.parse::<u32>().unwrap().to_le_bytes().to_vec()),
+        SettingType::VarFloat => Ok(value.parse::<f32>().unwrap().to_le_bytes().to_vec()),
+        SettingType::VarString => Ok(value.as_bytes().to_vec()),
     };
 }
