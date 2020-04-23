@@ -146,6 +146,8 @@ pub struct INavMsp {
     summary: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
     chunk: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+
+    write_eeprom_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 }
 
 impl INavMsp {
@@ -184,6 +186,8 @@ impl INavMsp {
             summary: channel::<Result<Vec<u8>, ()>>(100),
 
             chunk: channel::<Result<Vec<u8>, ()>>(4096),
+
+            write_eeprom_ack: channel::<Result<Vec<u8>, ()>>(1),
         };
 	  }
 
@@ -221,6 +225,8 @@ impl INavMsp {
 
             self.summary.0.clone(),
             self.chunk.0.clone(),
+
+            self.write_eeprom_ack.0.clone(),
         );
     }
 
@@ -255,6 +261,8 @@ impl INavMsp {
         summary_send: Sender<Result<Vec<u8>, ()>>,
 
         chunk_send: Sender<Result<Vec<u8>, ()>>,
+
+        write_eeprom_ack: Sender<Result<Vec<u8>, ()>>,
     ) {
         task::spawn(async move {
             loop {
@@ -301,6 +309,8 @@ impl INavMsp {
 
                     Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => &summary_send,
                     Some(MspCommandCode::MSP_DATAFLASH_READ) => &chunk_send,
+
+                    Some(MspCommandCode::MSP_EEPROM_WRITE) => &write_eeprom_ack,
 
                     _ => continue,
                 };
@@ -977,6 +987,22 @@ impl INavMsp {
 
         return Ok(setting_ids);
 	  }
+
+    pub async fn save_to_eeprom(&self) -> Result<(), &str> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_EEPROM_WRITE as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.core.write(packet).await;
+
+        return match self.write_eeprom_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to write to eeprom")
+        };
+	  }
+
 
     pub async fn reboot(&self) -> Result<(), &str> {
         let packet = MspPacket {
