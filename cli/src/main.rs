@@ -178,7 +178,10 @@ async fn main() {
                         let line = l.unwrap();
                         let mut split_iter = line.split_whitespace();
                         let name = split_iter.next().unwrap().to_string();
-                        let val = split_iter.next().unwrap().to_string();
+                        let val = match split_iter.next() {
+                            Some(v) => v.to_string(),
+                            None => "".to_owned(),
+                        };
                         let (i, s) = setting_list_key_vals.get(&name).unwrap(); // TODO: write warnning if setting name not found
                         let buf_val = setting_to_vec(&s, &val).unwrap();
                         (i, buf_val)
@@ -310,7 +313,7 @@ fn setting_to_str(s: &inav_msp_lib::SettingInfo) -> String {
             let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<f32>());
             return f32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
         }
-        SettingType::VarString => ::std::str::from_utf8(&s.value).unwrap().to_string(),
+        SettingType::VarString => inav_msp_lib::INavMsp::str_from_u8_nul_utf8(&s.value).unwrap().to_owned(),
     };
 }
 
