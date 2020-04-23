@@ -17,11 +17,18 @@ use async_std::prelude::*;
 
 use std::time::Duration;
 use std::iter::Iterator;
+use std::str::FromStr;
 use futures::future::try_join_all;
 use clap_v3::{App, AppSettings, Arg};
-use multiwii_serial_protocol::structs::{SettingType, SettingMode};
+use multiwii_serial_protocol::structs::{
+    SettingType,
+    SettingMode,
+    MspRcChannel,
+    MspModeRange
+};
 use std::convert::TryInto;
 use std::collections::HashMap;
+use packed_struct::PrimitiveEnum;
 
 
 
@@ -41,12 +48,6 @@ async fn main() {
                     App::new("list").about("list common setting")
                 )
                 .subcommand(
-                    App::new("get")
-                        .about("get common setting")
-                        .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("name").help("The setting name to get").required(true).takes_value(true))
-                )
-                .subcommand(
                     App::new("set")
                         .about("Set common setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
@@ -58,6 +59,26 @@ async fn main() {
                         .about("Set all common setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("input").help("settings file path").required(true).takes_value(true))
+                )
+        )
+        .subcommand(
+            App::new("aux")
+                .about("Get all aux setting")
+                .subcommand(
+                    App::new("set")
+                        .about("Set aux setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                )
+        )
+        .subcommand(
+            App::new("mmix")
+                .about("Get all mmix setting")
+                .subcommand(
+                    App::new("set")
+                        .about("Set mmix setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -193,6 +214,51 @@ async fn main() {
                     try_join_all(set_setting_futures).await.unwrap();
                 },
                 ("", None) => println!("No subcommand was used"),
+                _ => unreachable!(),
+            }
+        }
+        ("aux", Some(aux_matches)) => {
+            match aux_matches.subcommand() {
+                ("set", Some(set_matches)) => {
+                    if !set_matches.is_present("value") {
+                        unreachable!();
+                    }
+
+                    let value = set_matches.value_of("value").unwrap();
+                    let mut split_iter = value.split_whitespace();
+                    let index = split_iter.next().unwrap();
+                    let box_id = split_iter.next().unwrap();
+                    let aux_channel_index = split_iter.next().unwrap();
+                    let start_step = split_iter.next().unwrap();
+                    let end_step = split_iter.next().unwrap();
+
+                    let start_step_parsed = u32::from_str(start_step).unwrap();
+                    let end_step_parsed = u32::from_str(end_step).unwrap();
+
+                    let range = MspModeRange {
+                        box_id: u8::from_str(box_id).unwrap(),
+                        aux_channel_index: MspRcChannel::from_primitive(
+                            u8::from_str(aux_channel_index).unwrap()
+                        ).unwrap(),
+                        start_step: ((start_step_parsed - 900) / 25) as u8,
+                        end_step: ((end_step_parsed - 900) / 25) as u8,
+                    };
+
+                    inav.set_mode_range(u8::from_str(index).unwrap(), range).await.unwrap();
+                },
+                ("", None) => {
+                    let ranges = inav.get_mode_ranges().await.unwrap();
+                    for (i, r) in ranges.iter().enumerate() {
+                        println!(
+                            "{} {} {} {} {}",
+                            i,
+                            r.box_id,
+                            r.aux_channel_index.to_primitive(),
+                            (r.start_step as u32) * 25 + 900,
+                            (r.end_step as u32) * 25 + 900
+                        );
+                    }
+                },
                 _ => unreachable!(),
             }
         }
