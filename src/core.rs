@@ -74,7 +74,7 @@ impl Core {
         // task 1: read into input channel from serial(reading from serial is blocking)
         task::spawn(async move {
             while should_stop.load(Ordering::Relaxed) == false {
-                let mut serial_buf: Vec<u8> = vec![0; 1000];
+                let mut serial_buf: Vec<u8> = vec![0; 0x1000];
                 match serial.read(serial_buf.as_mut_slice()) {
                     Ok(bytes) => {
                         for n in 0..bytes {
