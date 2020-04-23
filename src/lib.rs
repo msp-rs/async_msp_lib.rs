@@ -21,15 +21,6 @@ pub struct MspDataFlashReplyWithData {
     pub payload: Vec<u8>,
 }
 
-#[derive(Debug)]
-pub struct MotorMixer {
-    pub index: u8,
-    pub throttle: u16,
-    pub roll: u16,
-    pub pitch: u16,
-    pub yaw: u16,
-}
-
 pub struct FlashDataFile {
     core: core::Core,
     chunk_recv: Receiver<Result<Vec<u8>, ()>>,
@@ -522,9 +513,9 @@ impl INavMsp {
     ///     yaw: 1000,
     /// }).await;
     /// println!("cli {:?}", inav.get_motor_mixers().await);
-    pub async fn set_motor_mixer(&self, mmix: MotorMixer) -> Result<(), &str> {
+    pub async fn set_motor_mixer(&self, index: u8, mmix: MspMotorMixer) -> Result<(), &str> {
         let payload = MspSetMotorMixer {
-            index: mmix.index,
+            index: index,
             motor_mixer: MspMotorMixer {
                 throttle: mmix.throttle,
                 roll: mmix.roll,
@@ -547,7 +538,7 @@ impl INavMsp {
         };
 	  }
 
-    pub async fn get_motor_mixers(&self) -> Result<Vec<MotorMixer>, &str> {
+    pub async fn get_motor_mixers(&self) -> Result<Vec<MspMotorMixer>, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_MOTOR_MIXER as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -567,13 +558,7 @@ impl INavMsp {
         for i in (0..payload.len()).step_by(len) {
             let m = MspMotorMixer::unpack_from_slice(&payload[i..i+len]).unwrap();
             if m.throttle != 0 {
-                mmixers.push(MotorMixer {
-                    index: (i / len) as u8,
-                    throttle: m.throttle,
-                    roll: m.roll,
-                    pitch: m.pitch,
-                    yaw: m.yaw,
-                });
+                mmixers.push(m);
             }
         }
 
