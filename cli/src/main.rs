@@ -76,6 +76,24 @@ async fn main() {
                         .arg(Arg::with_name("input").help("download path").required(true).takes_value(true))
                 )
         )
+        .subcommand(
+            App::new("reboot")
+                .about("Write settings to eeprom")
+        )
+        .arg(
+            Arg::with_name("save")
+                .short('s')
+                .long("save")
+                .help("settings file path")
+                .required(false)
+        )
+        .arg(
+            Arg::with_name("reboot")
+                .short('r')
+                .long("reboot")
+                .help("reboot fc")
+                .required(false)
+        )
 
         // .args_from_usage(
         //     "-p, --port=[FILE] 'Serial port'
@@ -145,6 +163,7 @@ async fn main() {
                         .await.unwrap();
                     let f = BufReader::new(f);
 
+                    println!("listing settings");
                     let setting_list = list_settings(&inav).await.unwrap();
 
                     let setting_list_key_vals = setting_list
@@ -227,8 +246,19 @@ async fn main() {
                 _ => unreachable!(),
             }
         }
+        ("reboot", Some(_)) => {
+            inav.reboot().await.unwrap();
+        }
         ("", None) => println!("No subcommand was used"), // If no subcommand was usd it'll match the tuple ("", None)
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachabe!()
+    }
+
+    if matches.is_present("save") {
+        inav.save_to_eeprom().await.unwrap();
+    }
+
+    if matches.is_present("reboot") {
+        inav.reboot().await.unwrap();
     }
 }
 
