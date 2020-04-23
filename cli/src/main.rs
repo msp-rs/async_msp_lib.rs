@@ -147,22 +147,26 @@ async fn main() {
 
                     let setting_list = list_settings(&inav).await.unwrap();
 
-                    let setting_list_key_vals = setting_list.iter().fold(HashMap::new(), |mut acc, s| {
-                        acc.insert(s.name.clone(), s);
-                        acc
-                    });
+                    let setting_list_key_vals = setting_list
+                        .iter()
+                        .enumerate()
+                        .fold(HashMap::new(), |mut acc, (i, s) | {
+                            acc.insert(s.name.clone(), (i as u16, s));
+                            acc
+                        });
 
-                    let name_buf_valus = f.lines().map(|l| {
+                    let id_buf_valus = f.lines().map(|l| {
                         let line = l.unwrap();
                         let mut split_iter = line.split_whitespace();
                         let name = split_iter.next().unwrap().to_string();
                         let val = split_iter.next().unwrap().to_string();
-                        let s = setting_list_key_vals.get(&name).unwrap(); // TODO: write warnning if setting name not found
-                        let buf_val = setting_to_vec(s, &val).unwrap();
-                        (&s.name, buf_val)
-                    }).collect::<Vec<(&String, Vec<u8>)>>().await;
+                        let (i, s) = setting_list_key_vals.get(&name).unwrap(); // TODO: write warnning if setting name not found
+                        let buf_val = setting_to_vec(&s, &val).unwrap();
+                        (i, buf_val)
+                    }).collect::<Vec<(&u16, Vec<u8>)>>().await;
 
-                    let set_setting_futures = name_buf_valus.iter().map(|(n, v)| inav.set_setting_by_name(n, v));
+                    let set_setting_futures = id_buf_valus.iter()
+                        .map(|(i, v)| inav.set_setting_by_id(i, v));
                     println!("writing settings");
                     try_join_all(set_setting_futures).await.unwrap();
                 },
@@ -230,10 +234,12 @@ async fn main() {
 
 async fn list_settings(inav: &inav_msp_lib::INavMsp) -> Result<Vec<inav_msp_lib::SettingInfo>, &str> {
     let pg_settings = inav.get_pg_settings().await.unwrap();
-    let setting_ids: Vec<u16> = pg_settings
+    let mut setting_ids: Vec<u16> = pg_settings
         .iter()
-        .flat_map(|pg_s| (pg_s.start_id..pg_s.end_id).map(u16::from).collect::<Vec<u16>>())
+        .flat_map(|pg_s| (pg_s.start_id..=pg_s.end_id).map(u16::from).collect::<Vec<u16>>())
         .collect();
+
+    setting_ids.sort();
     let setting_info_futures = setting_ids
         .iter()
         .map(|id| inav.get_setting_info_by_id(&id));
