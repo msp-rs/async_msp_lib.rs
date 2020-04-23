@@ -24,7 +24,8 @@ use multiwii_serial_protocol::structs::{
     SettingType,
     SettingMode,
     MspRcChannel,
-    MspModeRange
+    MspModeRange,
+    MspMotorMixer,
 };
 use std::convert::TryInto;
 use std::collections::HashMap;
@@ -256,6 +257,46 @@ async fn main() {
                             r.aux_channel_index.to_primitive(),
                             (r.start_step as u32) * 25 + 900,
                             (r.end_step as u32) * 25 + 900
+                        );
+                    }
+                },
+                _ => unreachable!(),
+            }
+        }
+        ("mmix", Some(mmix_matches)) => {
+            match mmix_matches.subcommand() {
+                ("set", Some(set_matches)) => {
+                    if !set_matches.is_present("value") {
+                        unreachable!();
+                    }
+
+                    let value = set_matches.value_of("value").unwrap();
+                    let mut split_iter = value.split_whitespace();
+                    let index = split_iter.next().unwrap();
+                    let throttle = split_iter.next().unwrap();
+                    let roll = split_iter.next().unwrap();
+                    let pitch = split_iter.next().unwrap();
+                    let yaw = split_iter.next().unwrap();
+
+                    let mmix = MspMotorMixer {
+                        throttle: f32::from_str(throttle).unwrap() as u16 * 1000,
+                        roll: (f32::from_str(roll).unwrap() + 2f32) as u16 * 1000,
+                        pitch: (f32::from_str(pitch).unwrap() + 2f32) as u16 * 1000,
+                        yaw: (f32::from_str(yaw).unwrap() + 2f32) as u16 * 1000,
+                    };
+
+                    inav.set_motor_mixer(u8::from_str(index).unwrap(), mmix).await.unwrap();
+                },
+                ("", None) => {
+                    let mixers = inav.get_motor_mixers().await.unwrap();
+                    for (i, m) in mixers.iter().enumerate() {
+                        println!(
+                            "{} {:.3} {:.3} {:.3} {:.3}",
+                            i,
+                            m.throttle as f32 / 1000f32,
+                            m.roll as f32 / 1000f32 - 2f32,
+                            m.pitch as f32 / 1000f32 - 2f32,
+                            m.yaw as f32 / 1000f32 - 2f32,
                         );
                     }
                 },
