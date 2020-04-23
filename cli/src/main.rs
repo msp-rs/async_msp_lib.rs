@@ -107,17 +107,10 @@ async fn main() {
         ("setting", Some(setting_matches)) => {
             match setting_matches.subcommand() {
                 ("list", Some(_)) => {
-                    let pg_settings = inav.get_pg_settings().await.unwrap();
-                    let setting_ids: Vec<u16> = pg_settings
-                        .iter()
-                        .flat_map(|pg_s| (pg_s.start_id..pg_s.end_id).map(u16::from).collect::<Vec<u16>>())
-                        .collect();
-                    let setting_info_futures = setting_ids
-                        .iter()
-                        .map(|id| inav.get_setting_info_by_id(&id));
-                    let all_settings = try_join_all(setting_info_futures).await.unwrap();
-                    for s in all_settings {
-                        println!("{} {}", s.name, setting_to_str(&s));
+                    let setting_list = list_settings(&inav).await.unwrap();
+
+                    for s in setting_list {
+                        println!("{} {}", &s.name, setting_to_str(&s));
                     }
                 }
                 ("get", Some(get_matches)) => {
@@ -138,7 +131,7 @@ async fn main() {
                     let value = set_matches.value_of("value").unwrap();
                     let setting_info = inav.get_setting_info_by_name(&name).await.unwrap();
                     let payload = setting_to_vec(&setting_info, value).unwrap();
-                    inav.set_setting(name, payload).await.unwrap();
+                    inav.set_setting_by_name(name, &payload).await.unwrap();
                 },
                 ("set-all", Some(set_all_matches)) => {
                     if !set_all_matches.is_present("input") {
@@ -152,30 +145,24 @@ async fn main() {
                         .await.unwrap();
                     let f = BufReader::new(f);
 
-                    let setting_key_vals = f.lines().fold(HashMap::new(), |mut acc, l| {
+                    let setting_list = list_settings(&inav).await.unwrap();
+
+                    let setting_list_key_vals = setting_list.iter().fold(HashMap::new(), |mut acc, s| {
+                        acc.insert(s.name.clone(), s);
+                        acc
+                    });
+
+                    let name_buf_valus = f.lines().map(|l| {
                         let line = l.unwrap();
                         let mut split_iter = line.split_whitespace();
                         let name = split_iter.next().unwrap().to_string();
-                        let value = split_iter.next().unwrap().to_string();
-                        acc.insert(name, value);
-                        acc
-                    }).await;
-
-                    let setting_info_futures = setting_key_vals
-                        .keys()
-                        .map(|n| inav.get_setting_info_by_name(n));
-
-                    println!("fetching settings info");
-
-                    let all_settings = try_join_all(setting_info_futures).await.unwrap();
-                    // println!("{:?}", all_settings);
-                    let name_buf_valus = all_settings.iter().map(|s| {
-                        let val = setting_key_vals.get(&s.name).unwrap();
-                        let buf_val = setting_to_vec(s, val).unwrap();
+                        let val = split_iter.next().unwrap().to_string();
+                        let s = setting_list_key_vals.get(&name).unwrap(); // TODO: write warnning if setting name not found
+                        let buf_val = setting_to_vec(s, &val).unwrap();
                         (&s.name, buf_val)
-                    });
-                    // TODO: print after every setting set its name
-                    let set_setting_futures = name_buf_valus.map(|(n, v)| inav.set_setting(n, v));
+                    }).collect::<Vec<(&String, Vec<u8>)>>().await;
+
+                    let set_setting_futures = name_buf_valus.iter().map(|(n, v)| inav.set_setting_by_name(n, v));
                     println!("writing settings");
                     try_join_all(set_setting_futures).await.unwrap();
                 },
@@ -241,6 +228,18 @@ async fn main() {
     }
 }
 
+async fn list_settings(inav: &inav_msp_lib::INavMsp) -> Result<Vec<inav_msp_lib::SettingInfo>, &str> {
+    let pg_settings = inav.get_pg_settings().await.unwrap();
+    let setting_ids: Vec<u16> = pg_settings
+        .iter()
+        .flat_map(|pg_s| (pg_s.start_id..pg_s.end_id).map(u16::from).collect::<Vec<u16>>())
+        .collect();
+    let setting_info_futures = setting_ids
+        .iter()
+        .map(|id| inav.get_setting_info_by_id(&id));
+    return try_join_all(setting_info_futures).await;
+}
+
 fn setting_to_str(s: &inav_msp_lib::SettingInfo) -> String {
     return match s.info.setting_type {
         SettingType::VarUint8 => {
@@ -266,6 +265,10 @@ fn setting_to_str(s: &inav_msp_lib::SettingInfo) -> String {
         SettingType::VarUint32 => {
             let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<u32>());
             return u32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
+        }
+        SettingType::VarInt32 => { // TODO: non standart in betaflight and inav
+            let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<i32>());
+            return i32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
         }
         SettingType::VarFloat => {
             let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<f32>());
