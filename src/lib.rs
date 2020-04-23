@@ -22,16 +22,6 @@ pub struct MspDataFlashReplyWithData {
 }
 
 #[derive(Debug)]
-pub struct ModeRange {
-    pub index: u8,
-    pub box_id: u8,
-    pub aux_channel_index: u8,
-    pub start_step: u8,
-    pub end_step: u8,
-}
-
-
-#[derive(Debug)]
 pub struct MotorMixer {
     pub index: u8,
     pub throttle: u16,
@@ -477,15 +467,10 @@ impl INavMsp {
     /// }).await;
     /// will ack with the same command
     /// inav.get_mode_ranges().await
-    pub async fn set_mode_range(&self, mode: ModeRange) -> Result<(), &str>{
+    pub async fn set_mode_range(&self, index: u8, range: MspModeRange) -> Result<(), &str>{
         let payload = MspSetModeRange {
-            index: mode.index,
-            mode_range: MspModeRange {
-                box_id: mode.box_id,
-                aux_channel_index: MspRcChannel::from_primitive(mode.aux_channel_index).unwrap(),
-                start_step: mode.start_step,
-                end_step: mode.end_step,
-            }
+            index: index,
+            mode_range: range,
         };
 
         let packet = MspPacket {
@@ -502,7 +487,7 @@ impl INavMsp {
         };
 	  }
 
-    pub async fn get_mode_ranges(&self) -> Result<Vec<ModeRange>, &str> {
+    pub async fn get_mode_ranges(&self) -> Result<Vec<MspModeRange>, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_MODE_RANGES as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -523,14 +508,7 @@ impl INavMsp {
         let len = MspModeRange::packed_bytes();
         for i in (0..payload.len()).step_by(len) {
             let r = MspModeRange::unpack_from_slice(&payload[i..i+len]).unwrap();
-
-            ranges.push(ModeRange {
-                index: (i / len) as u8,
-                box_id: r.box_id,
-                aux_channel_index: r.aux_channel_index.to_primitive(),
-                start_step: r.start_step,
-                end_step: r.end_step,
-            });
+            ranges.push(r);
         }
 
         return Ok(ranges);
