@@ -848,9 +848,24 @@ impl INavMsp {
         ::std::str::from_utf8(&utf8_src[0..nul_range_end])
     }
 
-    pub async fn set_setting(&self, name: &str, value: Vec<u8>) -> Result<(), &str> {
+    pub async fn set_setting_by_id(&self, id: &u16, value: &[u8]) -> Result<(), &str> {
+        let payload = MspSettingInfoRequest {
+            null: 0,
+            id: *id
+        };
+
+        return self.set_setting(&payload.pack(), value).await;
+    }
+
+    pub async fn set_setting_by_name(&self, name: &str, value: &[u8]) -> Result<(), &str> {
         let mut payload = name.as_bytes().to_vec();
         payload.push(b'\0');
+
+        return self.set_setting(&payload, value).await;
+    }
+
+    pub async fn set_setting(&self, id: &[u8], value: &[u8]) -> Result<(), &str> {
+        let mut payload = id.to_vec();
         payload.extend(value);
 
         // either send \0 then 2 bytes of id
@@ -906,7 +921,7 @@ impl INavMsp {
         let name = INavMsp::str_from_u8_nul_utf8(&payload).unwrap();
         let len = MspSettingInfo::packed_bytes();
         let mut index = name.len() + 1;
-        let setting_info = MspSettingInfo::unpack_from_slice(&payload[index..index + len]).unwrap();
+        let setting_info = MspSettingInfo::unpack_from_slice(&payload[index..index + len]).expect("Failed to parse inavlid msp setting");
 
         index += len;
 
