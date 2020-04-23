@@ -977,4 +977,15 @@ impl INavMsp {
 
         return Ok(setting_ids);
 	  }
+
+    pub async fn reboot(&self) -> Result<(), &str> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_SET_REBOOT as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.core.write(packet).await;
+        Ok(())
+	  }
 }
