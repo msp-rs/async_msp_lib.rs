@@ -640,7 +640,7 @@ impl INavMsp {
         });
 	  }
 
-    /// let shitty_serials = vec![multiwii_serial_protocol::structs::SerialSetting {
+    /// let shitty_serials = vec![multiwii_serial_protocol::structs::MspSerialSetting {
     ///     index: 6,
     ///     function_mask: 0,
     ///     msp_baudrate_index: 0,
@@ -650,7 +650,7 @@ impl INavMsp {
     /// }];
     /// inav.set_serial_settings(shitty_serials).await;
     /// println!("serial {:?}", inav.get_serial_settings().await);
-    pub async fn set_serial_settings(&self, serials: Vec<SerialSetting>) -> Result<(), &str> {
+    pub async fn set_serial_settings(&self, serials: Vec<MspSerialSetting>) -> Result<(), &str> {
         let payload = serials.iter().flat_map(|s| s.pack().to_vec()).collect();
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_SET_SERIAL_CONFIG as u16,
@@ -666,7 +666,7 @@ impl INavMsp {
         };
 	  }
 
-    pub async fn get_serial_settings(&self) -> Result<Vec<SerialSetting>, &str> {
+    pub async fn get_serial_settings(&self) -> Result<Vec<MspSerialSetting>, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_SERIAL_CONFIG as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -681,11 +681,11 @@ impl INavMsp {
         };
 
         let mut serials = vec![];
-        let len = SerialSetting::packed_bytes();
+        let len = MspSerialSetting::packed_bytes();
 
         for i in (0..payload.len()).step_by(len) {
-            let serial_setting = SerialSetting::unpack_from_slice(&payload[i..i+len]).unwrap();
-            if serial_setting.index != 0 {
+            let serial_setting = MspSerialSetting::unpack_from_slice(&payload[i..i+len]).unwrap();
+            if serial_setting.identifier != 0 {
                 serials.push(serial_setting);
             }
         }
