@@ -26,6 +26,8 @@ use multiwii_serial_protocol::structs::{
     MspRcChannel,
     MspModeRange,
     MspMotorMixer,
+    Baudrate,
+    MspSerialSetting,
 };
 use std::convert::TryInto;
 use std::collections::HashMap;
@@ -78,6 +80,16 @@ async fn main() {
                 .subcommand(
                     App::new("set")
                         .about("Set mmix setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                )
+        )
+        .subcommand(
+            App::new("serial")
+                .about("Get all serial setting")
+                .subcommand(
+                    App::new("set")
+                        .about("Set serial setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
                 )
@@ -303,6 +315,52 @@ async fn main() {
                 _ => unreachable!(),
             }
         }
+        ("serial", Some(serial_matches)) => {
+            match serial_matches.subcommand() {
+                ("set", Some(set_matches)) => {
+                    if !set_matches.is_present("value") {
+                        unreachable!();
+                    }
+
+                    let value = set_matches.value_of("value").unwrap();
+                    let mut split_iter = value.split_whitespace();
+
+                    let identifier = split_iter.next().unwrap();
+                    let function_mask = split_iter.next().unwrap();
+                    let msp_baudrate_index = split_iter.next().unwrap();
+                    let gps_baudrate_index = split_iter.next().unwrap();
+                    let telemetry_baudrate_index = split_iter.next().unwrap();
+                    let peripheral_baudrate_index = split_iter.next().unwrap();
+
+                    let serial = MspSerialSetting {
+                        identifier: u8::from_str(identifier).unwrap(),
+                        function_mask: u32::from_str(function_mask).unwrap(),
+                        msp_baudrate_index: string_to_baudrate(msp_baudrate_index).unwrap(),
+                        gps_baudrate_index: string_to_baudrate(gps_baudrate_index).unwrap(),
+                        telemetry_baudrate_index: string_to_baudrate(telemetry_baudrate_index).unwrap(),
+                        peripheral_baudrate_index: string_to_baudrate(peripheral_baudrate_index).unwrap(),
+                    };
+
+                    inav.set_serial_settings(vec![serial]).await.unwrap();
+                },
+                ("", None) => {
+                    let serials = inav.get_serial_settings().await.unwrap();
+
+                    for s in serials.iter(){
+                        println!(
+                            "{} {} {} {} {} {}",
+                            s.identifier,
+                            s.function_mask,
+                            baudrate_to_string(&s.msp_baudrate_index).unwrap(),
+                            baudrate_to_string(&s.gps_baudrate_index).unwrap(),
+                            baudrate_to_string(&s.telemetry_baudrate_index).unwrap(),
+                            baudrate_to_string(&s.peripheral_baudrate_index).unwrap(),
+                        );
+                    }
+                },
+                _ => unreachable!(),
+            }
+        }
         ("blackbox", Some(blackbox_matches)) => {
             match blackbox_matches.subcommand() {
                 ("download", Some(download_matches)) => {
@@ -445,7 +503,60 @@ fn setting_to_vec<'a>(s: &inav_msp_lib::SettingInfo, value: &str) -> Result<Vec<
         SettingType::VarUint16 => Ok(value.parse::<u16>().unwrap().to_le_bytes().to_vec()),
         SettingType::VarInt16 => Ok(value.parse::<i16>().unwrap().to_le_bytes().to_vec()),
         SettingType::VarUint32 => Ok(value.parse::<u32>().unwrap().to_le_bytes().to_vec()),
+        SettingType::VarInt32 => Ok(value.parse::<i32>().unwrap().to_le_bytes().to_vec()),
         SettingType::VarFloat => Ok(value.parse::<f32>().unwrap().to_le_bytes().to_vec()),
         SettingType::VarString => Ok(value.as_bytes().to_vec()),
     };
 }
+
+// TODO: use trait from_string or implement strum
+// TODO: and move this to the library
+fn baudrate_to_string<'a>(baudrate: &Baudrate) -> Result<String, &'a str> {
+    let s = match baudrate {
+        Baudrate::BaudAuto => "0",
+        Baudrate::Baud1200 => "1200",
+        Baudrate::Baud2400 => "2400",
+        Baudrate::Baud4800 => "4800",
+        Baudrate::Baud9600 => "9600",
+        Baudrate::Baud19200 => "19200",
+        Baudrate::Baud38400 => "38400",
+        Baudrate::Baud57600 => "57600",
+        Baudrate::Baud115200 => "115200",
+        Baudrate::Baud230400 => "230400",
+        Baudrate::Baud250000 => "250000",
+        Baudrate::Baud460800 => "460800",
+        Baudrate::Baud921600 => "921600",
+        Baudrate::Baud1000000 => "1000000",
+        Baudrate::Baud1500000 => "1500000",
+        Baudrate::Baud2000000 => "2000000",
+        Baudrate::Baud2470000 => "2470000",
+    };
+
+    return Ok(s.to_owned());
+}
+
+fn string_to_baudrate<'a>(baudrate_str: &str) -> Result<Baudrate, &'a str> {
+    let baudrate = match baudrate_str {
+        "0" => Baudrate::BaudAuto,
+        "1200" => Baudrate::Baud1200,
+        "2400" => Baudrate::Baud2400,
+        "4800" => Baudrate::Baud4800,
+        "9600" => Baudrate::Baud9600,
+        "19200" => Baudrate::Baud19200,
+        "38400" => Baudrate::Baud38400,
+        "57600" => Baudrate::Baud57600,
+        "115200" => Baudrate::Baud115200,
+        "230400" => Baudrate::Baud230400,
+        "250000" => Baudrate::Baud250000,
+        "460800" => Baudrate::Baud460800,
+        "921600" => Baudrate::Baud921600,
+        "1000000" => Baudrate::Baud1000000,
+        "1500000" => Baudrate::Baud1500000,
+        "2000000" => Baudrate::Baud2000000,
+        "2470000" => Baudrate::Baud2470000,
+        _ => return Err("Baudrate not found"),
+    };
+
+    return Ok(baudrate);
+}
+
