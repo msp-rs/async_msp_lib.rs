@@ -29,6 +29,7 @@ use multiwii_serial_protocol::structs::{
     Baudrate,
     MspSerialSetting,
     MspOsdItemPosition,
+    SerialIdentifier,
 };
 use std::convert::TryInto;
 use std::collections::HashMap;
@@ -344,7 +345,7 @@ async fn main() {
                     let peripheral_baudrate_index = split_iter.next().unwrap();
 
                     let serial = MspSerialSetting {
-                        identifier: u8::from_str(identifier).unwrap(),
+                        identifier: u8_to_serial_identifier(u8::from_str(identifier).unwrap()).unwrap(),
                         function_mask: u32::from_str(function_mask).unwrap(),
                         msp_baudrate_index: string_to_baudrate(msp_baudrate_index).unwrap(),
                         gps_baudrate_index: string_to_baudrate(gps_baudrate_index).unwrap(),
@@ -360,7 +361,7 @@ async fn main() {
                     for s in serials.iter(){
                         println!(
                             "{} {} {} {} {} {}",
-                            s.identifier,
+                            s.identifier as u8,
                             s.function_mask,
                             baudrate_to_string(&s.msp_baudrate_index).unwrap(),
                             baudrate_to_string(&s.gps_baudrate_index).unwrap(),
@@ -621,3 +622,22 @@ fn string_to_baudrate<'a>(baudrate_str: &str) -> Result<Baudrate, &'a str> {
     return Ok(baudrate);
 }
 
+fn u8_to_serial_identifier<'a>(id: u8) -> Result<SerialIdentifier, &'a str> {
+    let serial = match id {
+        255 => SerialIdentifier::None,
+        0 => SerialIdentifier::USART1,
+        1 => SerialIdentifier::USART2,
+        2 => SerialIdentifier::USART3,
+        3 => SerialIdentifier::USART4,
+        4 => SerialIdentifier::USART5,
+        5 => SerialIdentifier::USART6,
+        6 => SerialIdentifier::USART7,
+        7 => SerialIdentifier::USART8,
+        20 => SerialIdentifier::UsbVcp,
+        30 => SerialIdentifier::SoftSerial1,
+        31 => SerialIdentifier::SoftSerial2,
+        _ => return Err("Serial identifier not found"),
+    };
+
+    return Ok(serial);
+}
