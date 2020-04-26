@@ -20,22 +20,21 @@ use std::iter::Iterator;
 use std::str::FromStr;
 use futures::future::try_join_all;
 use clap_v3::{App, AppSettings, Arg};
-use multiwii_serial_protocol::structs::{
-    SettingType,
-    SettingMode,
-    MspRcChannel,
-    MspModeRange,
-    MspMotorMixer,
-    Baudrate,
-    MspSerialSetting,
-    MspOsdItemPosition,
-    SerialIdentifier,
-};
+use multiwii_serial_protocol::structs::*;
 use std::convert::TryInto;
 use std::collections::HashMap;
 use packed_struct::PrimitiveEnum;
 
 
+static FEATURE_NAMES: [&str; 32] = [
+    "THR_VBAT_COMP", "VBAT", "TX_PROF_SEL", "BAT_PROF_AUTOSWITCH", "MOTOR_STOP",
+    "", "SOFTSERIAL", "GPS", "",
+    "", "TELEMETRY", "CURRENT_METER", "3D", "RX_PARALLEL_PWM",
+    "RX_MSP", "RSSI_ADC", "LED_STRIP", "DASHBOARD", "",
+    "BLACKBOX", "", "TRANSPONDER", "AIRMODE",
+    "SUPEREXPO", "VTX", "RX_SPI", "", "PWM_SERVO_DRIVER", "PWM_OUTPUT_ENABLE",
+    "OSD", "FW_LAUNCH", "",
+];
 
 #[async_std::main]
 async fn main() {
@@ -101,6 +100,28 @@ async fn main() {
                 .about("Get all osd setting")
                 .subcommand(
                     App::new("set")
+                        .about("Set osd setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                )
+        )
+        .subcommand(
+            App::new("feature")
+                .about("Get all osd setting")
+                .subcommand(
+                    App::new("set")
+                        .about("Set osd setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                )
+                .subcommand(
+                    App::new("enable")
+                        .about("Set osd setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                )
+                .subcommand(
+                    App::new("disable")
                         .about("Set osd setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
@@ -418,6 +439,65 @@ async fn main() {
                             (field >> 5) & 0x001F, // OSD_Y
                             if field & 0x0800 > 0 { "V" } else { "H" },
                         );
+                    }
+                },
+                _ => unreachable!(),
+            }
+        }
+        ("feature", Some(serial_matches)) => {
+            match serial_matches.subcommand() {
+                ("set", Some(set_matches)) => {
+                    if !set_matches.is_present("value") {
+                        unreachable!();
+                    }
+
+                    let value = set_matches.value_of("value").unwrap();
+                    let mut features = [false; 32];
+
+                    for elem in value.split_whitespace() {
+                        let index = FEATURE_NAMES.iter().position(|&n| n == elem).unwrap();
+                        features[index] = true;
+                    }
+
+                    let set_feat = MspFeatures {
+                        features: features
+                    };
+
+                    inav.set_features(set_feat).await.unwrap();
+                },
+                // TODO: because of the async nature of msp-lib, enable and disable calls must be chained
+                ("enable", Some(enable_matches)) => {
+                    if !enable_matches.is_present("value") {
+                        unreachable!();
+                    }
+
+                    let value = enable_matches.value_of("value").unwrap();
+                    let index = FEATURE_NAMES.iter().position(|&n| n == value).unwrap();
+                    let mut feat = inav.get_features().await.unwrap();
+
+                    feat.features[index] = true;
+
+                    inav.set_features(feat).await.unwrap();
+                },
+                ("disable", Some(disable_matches)) => {
+                    if !disable_matches.is_present("value") {
+                        unreachable!();
+                    }
+
+                    let value = disable_matches.value_of("value").unwrap();
+                    let index = FEATURE_NAMES.iter().position(|&n| n == value).unwrap();
+                    let mut feat = inav.get_features().await.unwrap();
+
+                    feat.features[index] = false;
+
+                    inav.set_features(feat).await.unwrap();
+                }
+                ("", None) => {
+                    let features = inav.get_features().await.unwrap();
+                    for (i, &is_enabled) in features.features.iter().enumerate() {
+                        if is_enabled {
+                            println!("{}", FEATURE_NAMES[i]);
+                        }
                     }
                 },
                 _ => unreachable!(),
