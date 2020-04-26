@@ -96,6 +96,16 @@ async fn main() {
                 )
         )
         .subcommand(
+            App::new("map")
+                .about("Get rx map setting")
+                .subcommand(
+                    App::new("set")
+                        .about("Set rx map setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                )
+        )
+        .subcommand(
             App::new("serial")
                 .about("Get all serial setting")
                 .subcommand(
@@ -399,6 +409,45 @@ async fn main() {
                             m.min,
                         );
                     }
+                },
+                _ => unreachable!(),
+            }
+        }
+        ("map", Some(rx_map_matches)) => {
+            match rx_map_matches.subcommand() {
+                ("set", Some(set_matches)) => {
+                    if !set_matches.is_present("value") {
+                        unreachable!();
+                    }
+
+                    let value = set_matches.value_of("value").unwrap();
+
+                    let map_val = match value {
+                        "TAER" => [1, 2, 3, 0],
+                        "AETR" => [0, 1, 3, 2],
+                        _ => {
+                            eprintln!("Unsupported map");
+                            return;
+                        },
+                    };
+
+                    let rx_map = MspRxMap {
+                        map: map_val,
+                    };
+
+                    inav.set_rx_map(rx_map).await.unwrap();
+                },
+                ("", None) => {
+                    let r = inav.get_rx_map().await.unwrap();
+                    let map_name = match r.map {
+                        [1, 2, 3, 0] => "TAER",
+                        [0, 1, 3, 2] => "AETR",
+                        _ => {
+                            eprintln!("Unsupported map");
+                            return;
+                        },
+                    };
+                    println!("{}", map_name);
                 },
                 _ => unreachable!(),
             }
