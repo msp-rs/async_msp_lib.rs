@@ -703,11 +703,18 @@ impl INavMsp {
     /// };
     /// inav.set_features(shitty_features).await;
     /// println!("features {:?}", inav.get_features().await);
-    pub async fn set_features(&self, features: MspFeatures) -> Result<(), &str> {
+    pub async fn set_features(&self, feat: MspFeatures) -> Result<(), &str> {
+        let mut clone = feat.clone();
+
+        clone.features[0..8].reverse();
+        clone.features[8..16].reverse();
+        clone.features[16..24].reverse();
+        clone.features[24..32].reverse();
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SET_FEATURE as u16,
             direction: MspPacketDirection::ToFlightController,
-            data: features.pack().to_vec(),
+            data: clone.pack().to_vec(),
         };
 
         self.core.write(packet).await;
@@ -731,7 +738,15 @@ impl INavMsp {
             Err(_) => return Err("failed to get features")
         };
 
-        return Ok(MspFeatures::unpack_from_slice(&payload).unwrap());
+        let mut feat = MspFeatures::unpack_from_slice(&payload).unwrap();
+
+        // TODO: move this logic to parser, either use uin32 or fix the that booleans
+        feat.features[0..8].reverse();
+        feat.features[8..16].reverse();
+        feat.features[16..24].reverse();
+        feat.features[24..32].reverse();
+
+        return Ok(feat);
 	  }
 
     pub async fn set_servo_mix_rules(&self, servo_mix_rules: Vec<MspServoMixRule>) -> Result<(), &str> {
