@@ -565,9 +565,9 @@ impl INavMsp {
         return Ok(mmixers);
 	  }
 
-    /// inav.set_osd_config_item(116, multiwii_serial_protocol::structs::OsdItemPosition { col: 11u8, row: 22u8 }).await;
+    /// inav.set_osd_config_item(116, multiwii_serial_protocol::structs::MspOsdItemPosition { col: 11u8, row: 22u8 }).await;
     /// println!("osd {:?}", inav.get_osd_settings().await);
-    pub async fn set_osd_config_item(&self, id: u8, item: OsdItemPosition) -> Result<(), &str> {
+    pub async fn set_osd_config_item(&self, id: u8, item: MspOsdItemPosition) -> Result<(), &str> {
         let payload = MspSetOsdLayout {
             item_index: id,
             item: item,
@@ -587,7 +587,7 @@ impl INavMsp {
         };
     }
 
-    pub async fn set_osd_config(&self, config: OsdConfig) -> Result<(), &str> {
+    pub async fn set_osd_config(&self, config: MspOsdConfig) -> Result<(), &str> {
         // if -1 will set different kinds of configurations else the laytout id
         // but when fetching it always returns everything with correct osd_support
         // so it seems to set everything we need to call it twice, once with -1 and then with the real value
@@ -609,7 +609,7 @@ impl INavMsp {
         };
 	  }
 
-    pub async fn get_osd_settings(&self) -> Result<OsdSettings, &str> {
+    pub async fn get_osd_settings(&self) -> Result<MspOsdSettings, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_OSD_CONFIG as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -627,13 +627,13 @@ impl INavMsp {
         let osd_set_get_reply = MspSetGetOsdConfig::unpack_from_slice(&payload[..header_len]).unwrap();
 
         let mut item_positions = vec![];
-        let len = OsdItemPosition::packed_bytes();
+        let len = MspOsdItemPosition::packed_bytes();
         for i in (header_len..payload.len()).step_by(len) {
-            let item_pos = OsdItemPosition::unpack_from_slice(&payload[i..i+len]).unwrap();
+            let item_pos = MspOsdItemPosition::unpack_from_slice(&payload[i..i+len]).unwrap();
             item_positions.push(item_pos);
         }
 
-        return Ok(OsdSettings {
+        return Ok(MspOsdSettings {
             osd_support: osd_set_get_reply.item_index,
             config: osd_set_get_reply.config,
             item_positions: item_positions,
