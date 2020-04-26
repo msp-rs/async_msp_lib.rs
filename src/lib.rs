@@ -749,12 +749,16 @@ impl INavMsp {
         return Ok(feat);
 	  }
 
-    pub async fn set_servo_mix_rules(&self, servo_mix_rules: Vec<MspServoMixRule>) -> Result<(), &str> {
-        let payload = servo_mix_rules.iter().flat_map(|s| s.pack().to_vec()).collect();
+    pub async fn set_servo_mix_rule(&self, index: u8, servo_rule: MspServoMixRule) -> Result<(), &str> {
+        let payload = MspSetServoMixRule {
+            index: index,
+            servo_rule: servo_rule,
+        };
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SET_SERVO_MIX_RULE as u16,
             direction: MspPacketDirection::ToFlightController,
-            data: payload,
+            data: payload.pack().to_vec(),
         };
 
         self.core.write(packet).await;
@@ -785,7 +789,7 @@ impl INavMsp {
 
         for i in (0..payload.len()).step_by(len) {
             let serial_setting = MspServoMixRule::unpack_from_slice(&payload[i..i+len]).unwrap();
-            if serial_setting.index != 0 {
+            if serial_setting.rate != 0 {
                 rules.push(serial_setting);
             }
         }
