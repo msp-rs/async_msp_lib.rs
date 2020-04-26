@@ -28,6 +28,7 @@ use multiwii_serial_protocol::structs::{
     MspMotorMixer,
     Baudrate,
     MspSerialSetting,
+    MspOsdItemPosition,
 };
 use std::convert::TryInto;
 use std::collections::HashMap;
@@ -90,6 +91,16 @@ async fn main() {
                 .subcommand(
                     App::new("set")
                         .about("Set serial setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                )
+        )
+        .subcommand(
+            App::new("inav_osd_item")
+                .about("Get all osd setting")
+                .subcommand(
+                    App::new("set")
+                        .about("Set osd setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
                 )
@@ -355,6 +366,56 @@ async fn main() {
                             baudrate_to_string(&s.gps_baudrate_index).unwrap(),
                             baudrate_to_string(&s.telemetry_baudrate_index).unwrap(),
                             baudrate_to_string(&s.peripheral_baudrate_index).unwrap(),
+                        );
+                    }
+                },
+                _ => unreachable!(),
+            }
+        }
+        ("inav_osd_item", Some(serial_matches)) => {
+            match serial_matches.subcommand() {
+                ("set", Some(set_matches)) => {
+                    if !set_matches.is_present("value") {
+                        unreachable!();
+                    }
+
+                    let value = set_matches.value_of("value").unwrap();
+                    let mut split_iter = value.split_whitespace();
+
+                    let _layout_index = split_iter.next().unwrap();
+                    let item_pos = u8::from_str(split_iter.next().unwrap()).unwrap();
+                    let col = u8::from_str(split_iter.next().unwrap()).unwrap();
+                    let row = u8::from_str(split_iter.next().unwrap()).unwrap();
+                    let vis = split_iter.next().unwrap(); // v h
+                    let is_visible: u16 = match vis {
+                        "V" => 0x0800,
+                        "H" => 0,
+                        _ => 0
+                    };
+
+                    let field: u16 = ((col as u16) | ((row as u16) << 5)) | is_visible;
+                    let bytes = field.to_le_bytes();
+
+                    let item = MspOsdItemPosition {
+                        col: bytes[0],
+                        row: bytes[1],
+                    };
+
+                    inav.set_osd_config_item(item_pos, item).await.unwrap();
+                },
+                ("", None) => {
+                    let osd = inav.get_osd_settings().await.unwrap();
+
+                    for (i, item) in osd.item_positions.iter().enumerate() {
+                        let field = u16::from_le_bytes([item.col, item.row]);
+
+                        // TODO: we set support only single layout
+                        println!(
+                            "0 {} {} {} {}",
+                            i,
+                            field & 0x001F, // OSD_X
+                            (field >> 5) & 0x001F, // OSD_Y
+                            if field & 0x0800 > 0 { "V" } else { "H" },
                         );
                     }
                 },
