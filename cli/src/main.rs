@@ -86,6 +86,16 @@ async fn main() {
                 )
         )
         .subcommand(
+            App::new("smix")
+                .about("Get all smix setting")
+                .subcommand(
+                    App::new("set")
+                        .about("Set smix setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                )
+        )
+        .subcommand(
             App::new("serial")
                 .about("Get all serial setting")
                 .subcommand(
@@ -342,6 +352,51 @@ async fn main() {
                             m.roll as f32 / 1000f32 - 2f32,
                             m.pitch as f32 / 1000f32 - 2f32,
                             m.yaw as f32 / 1000f32 - 2f32,
+                        );
+                    }
+                },
+                _ => unreachable!(),
+            }
+        }
+        ("smix", Some(mmix_matches)) => {
+            match mmix_matches.subcommand() {
+                ("set", Some(set_matches)) => {
+                    if !set_matches.is_present("value") {
+                        unreachable!();
+                    }
+
+                    let value = set_matches.value_of("value").unwrap();
+                    let mut split_iter = value.split_whitespace();
+
+                    let index = split_iter.next().unwrap();
+                    let target_channel = split_iter.next().unwrap();
+                    let input_source = split_iter.next().unwrap();
+                    let rate = split_iter.next().unwrap();
+                    let speed = split_iter.next().unwrap();
+
+                    let smix = MspServoMixRule {
+                        target_channel: u8::from_str(target_channel).unwrap(),
+                        input_source: u8::from_str(input_source).unwrap(),
+                        rate: u16::from_str(rate).unwrap(),
+                        speed: u8::from_str(speed).unwrap(),
+                        min: 0,
+                        max: 100,
+                        box_id: 0,
+                    };
+
+                    inav.set_servo_mix_rule(u8::from_str(index).unwrap(), smix).await.unwrap();
+                },
+                ("", None) => {
+                    let mixers = inav.get_servo_mix_rules().await.unwrap();
+                    for (i, m) in mixers.iter().enumerate() {
+                        println!(
+                            "{} {} {} {} {} {}",
+                            i,
+                            m.target_channel,
+                            m.input_source,
+                            m.rate,
+                            m.speed,
+                            m.min,
                         );
                     }
                 },
