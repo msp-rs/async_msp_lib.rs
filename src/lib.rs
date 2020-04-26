@@ -799,7 +799,7 @@ impl INavMsp {
 
     /// inav.set_rx_map_rules(multiwii_serial_protocol::structs::MspRxMap { map: [0,0,0,0]}).await;
     /// println!("features {:?}", inav.get_rx_map_rules().await);
-    pub async fn set_rx_map_rules(&self, rx_map: MspRxMap) -> Result<(), &str> {
+    pub async fn set_rx_map(&self, rx_map: MspRxMap) -> Result<(), &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SET_RX_MAP as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -814,7 +814,7 @@ impl INavMsp {
         };
 	  }
 
-    pub async fn get_rx_map_rules(&self) -> Result<MspRxMap, &str> {
+    pub async fn get_rx_map(&self) -> Result<MspRxMap, &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_RX_MAP as u16,
             direction: MspPacketDirection::ToFlightController,
