@@ -685,7 +685,7 @@ impl INavMsp {
 
         for i in (0..payload.len()).step_by(len) {
             let serial_setting = MspSerialSetting::unpack_from_slice(&payload[i..i+len]).unwrap();
-            if serial_setting.identifier != 0 {
+            if serial_setting.identifier != SerialIdentifier::None {
                 serials.push(serial_setting);
             }
         }
