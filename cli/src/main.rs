@@ -358,16 +358,9 @@ async fn main() {
                     inav.set_motor_mixer(u8::from_str(index).unwrap(), mmix).await.unwrap();
                 },
                 ("", None) => {
-                    let mixers = inav.get_motor_mixers().await.unwrap();
-                    for (i, m) in mixers.iter().enumerate() {
-                        println!(
-                            "{} {:.3} {:.3} {:.3} {:.3}",
-                            i,
-                            m.throttle as f32 / 1000f32,
-                            m.roll as f32 / 1000f32 - 2f32,
-                            m.pitch as f32 / 1000f32 - 2f32,
-                            m.yaw as f32 / 1000f32 - 2f32,
-                        );
+                    let dump = dump_mmix(&inav).await.unwrap();
+                    for d in dump {
+                        println!("{}", d);
                     }
                 },
                 _ => unreachable!(),
@@ -658,7 +651,9 @@ async fn main() {
             }
         }
         ("dump", Some(_)) => {
-            // dump mmix
+            for d in dump_mmix(&inav).await.unwrap() {
+                println!("mmix {}", d);
+            }
 
             for d in dump_smix(&inav).await.unwrap() {
                 println!("smix {}", d);
@@ -700,6 +695,22 @@ async fn list_settings(inav: &INavMsp) -> Result<Vec<inav_msp_lib::SettingInfo>,
         .iter()
         .map(|id| inav.get_setting_info_by_id(&id));
     return try_join_all(setting_info_futures).await;
+}
+
+async fn dump_mmix(inav: &INavMsp) -> Result<Vec<String>, &str> {
+    let mixers = inav.get_motor_mixers().await?;
+    let dump: Vec<String> = mixers
+        .iter()
+        .enumerate()
+        .map(|(i, m)| format!("{} {:.3} {:.3} {:.3} {:.3}",
+                              i,
+                              m.throttle as f32 / 1000f32,
+                              m.roll as f32 / 1000f32 - 2f32,
+                              m.pitch as f32 / 1000f32 - 2f32,
+                              m.yaw as f32 / 1000f32 - 2f32)
+        ).collect();
+
+    return Ok(dump);
 }
 
 async fn dump_smix(inav: &INavMsp) -> Result<Vec<String>, &str> {
