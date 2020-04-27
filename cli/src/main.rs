@@ -463,7 +463,7 @@ async fn main() {
                 _ => unreachable!(),
             }
         }
-        ("inav_osd_item", Some(serial_matches)) => {
+        ("osd_layout", Some(serial_matches)) => {
             match serial_matches.subcommand() {
                 ("set", Some(set_matches)) => {
                     if !set_matches.is_present("value") {
@@ -495,19 +495,8 @@ async fn main() {
                     inav.set_osd_config_item(item_pos, item).await.unwrap();
                 },
                 ("", None) => {
-                    let osd = inav.get_osd_settings().await.unwrap();
-
-                    for (i, item) in osd.item_positions.iter().enumerate() {
-                        let field = u16::from_le_bytes([item.col, item.row]);
-
-                        // TODO: we set support only single layout
-                        println!(
-                            "0 {} {} {} {}",
-                            i,
-                            field & 0x001F, // OSD_X
-                            (field >> 5) & 0x001F, // OSD_Y
-                            if field & 0x0800 > 0 { "V" } else { "H" },
-                        );
+                    for d in dump_osd_layout(&inav).await.unwrap() {
+                        println!("{}", d);
                     }
                 },
                 _ => unreachable!(),
@@ -644,7 +633,10 @@ async fn main() {
 
             println!("map {}", dump_map(&inav).await.unwrap());
 
-            // dump osd_layout
+            for d in dump_osd_layout(&inav).await.unwrap() {
+                println!("osd_layout {}", d);
+            }
+
             // feature
             // dump set
 
@@ -753,6 +745,27 @@ async fn dump_serial(inav: &INavMsp) -> Result<Vec<String>, &str> {
                          baudrate_to_string(&s.telemetry_baudrate_index).unwrap(),
                          baudrate_to_string(&s.peripheral_baudrate_index).unwrap())
         ).collect();
+
+    return Ok(dump);
+}
+
+async fn dump_osd_layout(inav: &INavMsp) -> Result<Vec<String>, &str> {
+    let osd = inav.get_osd_settings().await?;
+    let dump: Vec<String> = osd.item_positions
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let field = u16::from_le_bytes([item.col, item.row]);
+
+            // TODO: we set support only single layout
+            format!(
+                "0 {} {} {} {}",
+                i,
+                field & 0x001F, // OSD_X
+                (field >> 5) & 0x001F, // OSD_Y
+                if field & 0x0800 > 0 { "V" } else { "H" },
+            )
+        }).collect();
 
     return Ok(dump);
 }
