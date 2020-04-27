@@ -217,10 +217,9 @@ async fn main() {
         ("setting", Some(setting_matches)) => {
             match setting_matches.subcommand() {
                 ("list", Some(_)) => {
-                    let setting_list = list_settings(&inav).await.unwrap();
-
-                    for s in setting_list {
-                        println!("{} {}", &s.name, setting_to_str(&s));
+                    let dump = dump_common_setting(&inav).await.unwrap();
+                    for d in dump {
+                        println!("{}", d);
                     }
                 }
                 ("get", Some(get_matches)) => {
@@ -256,7 +255,7 @@ async fn main() {
                     let f = BufReader::new(f);
 
                     println!("listing settings");
-                    let setting_list = list_settings(&inav).await.unwrap();
+                    let setting_list = describe_settings(&inav).await.unwrap();
 
                     let setting_list_key_vals = setting_list
                         .iter()
@@ -638,7 +637,9 @@ async fn main() {
                 println!("feature {}", d);
             }
 
-            // dump set
+            for d in dump_common_setting(&inav).await.unwrap() {
+                println!("set {}", d);
+            }
 
         }
         ("reboot", Some(_)) => {
@@ -657,7 +658,7 @@ async fn main() {
     }
 }
 
-async fn list_settings(inav: &INavMsp) -> Result<Vec<inav_msp_lib::SettingInfo>, &str> {
+async fn describe_settings(inav: &INavMsp) -> Result<Vec<inav_msp_lib::SettingInfo>, &str> {
     let pg_settings = inav.get_pg_settings().await.unwrap();
     let mut setting_ids: Vec<u16> = pg_settings
         .iter()
@@ -786,6 +787,15 @@ async fn dump_feature(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
+async fn dump_common_setting(inav: &INavMsp) -> Result<Vec<String>, &str> {
+    let settings = describe_settings(inav).await?;
+    let dump: Vec<String> = settings
+        .iter()
+        .map(|s| format!("{} {}", &s.name, setting_to_str(&s)))
+        .collect();
+
+    return Ok(dump);
+}
 
 fn setting_to_str(s: &inav_msp_lib::SettingInfo) -> String {
     return match s.info.setting_type {
