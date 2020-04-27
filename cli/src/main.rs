@@ -169,6 +169,12 @@ async fn main() {
                 .about("dump all inav settings")
         )
         .subcommand(
+            App::new("upload")
+                .about("upload all inav settings")
+                .setting(AppSettings::ArgRequiredElseHelp)
+                .arg(Arg::with_name("input").help("settings file path").required(true).takes_value(true))
+        )
+        .subcommand(
             App::new("reboot")
                 .about("Write settings to eeprom")
         )
@@ -333,21 +339,7 @@ async fn main() {
                     }
 
                     let value = set_matches.value_of("value").unwrap();
-                    let mut split_iter = value.split_whitespace();
-                    let index = split_iter.next().unwrap();
-                    let throttle = split_iter.next().unwrap();
-                    let roll = split_iter.next().unwrap();
-                    let pitch = split_iter.next().unwrap();
-                    let yaw = split_iter.next().unwrap();
-
-                    let mmix = MspMotorMixer {
-                        throttle: f32::from_str(throttle).unwrap() as u16 * 1000,
-                        roll: (f32::from_str(roll).unwrap() + 2f32) as u16 * 1000,
-                        pitch: (f32::from_str(pitch).unwrap() + 2f32) as u16 * 1000,
-                        yaw: (f32::from_str(yaw).unwrap() + 2f32) as u16 * 1000,
-                    };
-
-                    inav.set_motor_mixer(u8::from_str(index).unwrap(), mmix).await.unwrap();
+                    upload_mmix(&inav, value).await.unwrap();
                 },
                 ("", None) => {
                     let dump = dump_mmix(&inav).await.unwrap();
@@ -640,7 +632,56 @@ async fn main() {
             for d in dump_common_setting(&inav).await.unwrap() {
                 println!("set {}", d);
             }
+        }
+        ("upload", Some(upload_matches)) => {
+            if !upload_matches.is_present("input") {
+                print!("missing input");
+            }
 
+            let input = upload_matches.value_of("input").unwrap();
+            let f = OpenOptions::new()
+                .read(true)
+                .open(input)
+                .await.unwrap();
+            let f = BufReader::new(f);
+
+            let valid_set_lines = f
+                .lines()
+                .fold(vec![], |mut acc, line| {
+                    let set_command: Vec<String> = line
+                        .unwrap()
+                        .splitn(2, ' ')
+                        .map(|vals| vals.to_owned())
+                        .collect();
+
+                    if set_command.len() < 2 {
+                        return acc;
+                    }
+
+                    acc.push((set_command[0].to_owned(), set_command[1].to_owned()));
+
+                    return acc;
+                }).await;
+
+            let set_values_results = valid_set_lines.iter().fold(vec![], |mut acc, (cmd, value)| {
+                let promise = match cmd.as_str() {
+                    "mmix" => upload_mmix(&inav, value),
+                    _ => return acc,
+                };
+
+                acc.push(promise);
+                return acc;
+            });
+
+            try_join_all(set_values_results).await.unwrap();
+
+            // upload smix
+            // upload serial
+            // upload aux
+            // upload map
+            // upload osd_layout
+            // upload feature
+            // upload set
         }
         ("reboot", Some(_)) => {
             inav.reboot().await.unwrap();
@@ -687,6 +728,24 @@ async fn dump_aux(inav: &INavMsp) -> Result<Vec<String>, &str> {
         ).collect();
 
     return Ok(dump);
+}
+
+async fn upload_mmix<'a>(inav: &'a INavMsp, value: &str) -> Result<(), &'a str> {
+    let mut split_iter = value.split_whitespace();
+    let index = split_iter.next().unwrap();
+    let throttle = split_iter.next().unwrap();
+    let roll = split_iter.next().unwrap();
+    let pitch = split_iter.next().unwrap();
+    let yaw = split_iter.next().unwrap();
+
+    let mmix = MspMotorMixer {
+        throttle: f32::from_str(throttle).unwrap() as u16 * 1000,
+        roll: (f32::from_str(roll).unwrap() + 2f32) as u16 * 1000,
+        pitch: (f32::from_str(pitch).unwrap() + 2f32) as u16 * 1000,
+        yaw: (f32::from_str(yaw).unwrap() + 2f32) as u16 * 1000,
+    };
+
+    Ok(inav.set_motor_mixer(u8::from_str(index).unwrap(), mmix).await?)
 }
 
 async fn dump_mmix(inav: &INavMsp) -> Result<Vec<String>, &str> {
