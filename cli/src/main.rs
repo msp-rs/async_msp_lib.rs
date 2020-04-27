@@ -551,11 +551,8 @@ async fn main() {
                     inav.set_features(feat).await.unwrap();
                 }
                 ("", None) => {
-                    let features = inav.get_features().await.unwrap();
-                    for (i, &is_enabled) in features.features.iter().enumerate() {
-                        if is_enabled {
-                            println!("{}", FEATURE_NAMES[i]);
-                        }
+                    for d in dump_feature(&inav).await.unwrap() {
+                        println!("{}", d);
                     }
                 },
                 _ => unreachable!(),
@@ -637,7 +634,10 @@ async fn main() {
                 println!("osd_layout {}", d);
             }
 
-            // feature
+            for d in dump_feature(&inav).await.unwrap() {
+                println!("feature {}", d);
+            }
+
             // dump set
 
         }
@@ -769,6 +769,23 @@ async fn dump_osd_layout(inav: &INavMsp) -> Result<Vec<String>, &str> {
 
     return Ok(dump);
 }
+
+async fn dump_feature(inav: &INavMsp) -> Result<Vec<String>, &str> {
+    let features = inav.get_features().await?;
+    let dump: Vec<String> = features
+        .features
+        .iter()
+        .enumerate()
+        .fold(vec![], |mut acc, (i, &is_enabled)| {
+            if is_enabled {
+                acc.push(format!("{}", FEATURE_NAMES[i]));
+            }
+            acc
+        });
+
+    return Ok(dump);
+}
+
 
 fn setting_to_str(s: &inav_msp_lib::SettingInfo) -> String {
     return match s.info.setting_type {
