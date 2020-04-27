@@ -24,6 +24,7 @@ use multiwii_serial_protocol::structs::*;
 use std::convert::TryInto;
 use std::collections::HashMap;
 use packed_struct::PrimitiveEnum;
+use inav_msp_lib::INavMsp;
 
 
 static FEATURE_NAMES: [&str; 32] = [
@@ -164,6 +165,10 @@ async fn main() {
                 )
         )
         .subcommand(
+            App::new("dump")
+                .about("dump all inav settings")
+        )
+        .subcommand(
             App::new("reboot")
                 .about("Write settings to eeprom")
         )
@@ -205,7 +210,7 @@ async fn main() {
         .expect("Failed to open serial port");
 
     // green-thread 1: read into input channel from serial(reading from serial is blocking)
-    let inav = inav_msp_lib::INavMsp::new();
+    let inav = INavMsp::new();
     inav.start(serialport);
 
     match matches.subcommand() {
@@ -368,8 +373,8 @@ async fn main() {
                 _ => unreachable!(),
             }
         }
-        ("smix", Some(mmix_matches)) => {
-            match mmix_matches.subcommand() {
+        ("smix", Some(smix_matches)) => {
+            match smix_matches.subcommand() {
                 ("set", Some(set_matches)) => {
                     if !set_matches.is_present("value") {
                         unreachable!();
@@ -397,17 +402,9 @@ async fn main() {
                     inav.set_servo_mix_rule(u8::from_str(index).unwrap(), smix).await.unwrap();
                 },
                 ("", None) => {
-                    let mixers = inav.get_servo_mix_rules().await.unwrap();
-                    for (i, m) in mixers.iter().enumerate() {
-                        println!(
-                            "{} {} {} {} {} {}",
-                            i,
-                            m.target_channel,
-                            m.input_source,
-                            m.rate,
-                            m.speed,
-                            m.min,
-                        );
+                    let dump = dump_smix(&inav).await.unwrap();
+                    for d in dump {
+                        println!("{}", d);
                     }
                 },
                 _ => unreachable!(),
@@ -660,6 +657,21 @@ async fn main() {
                 _ => unreachable!(),
             }
         }
+        ("dump", Some(_)) => {
+            // dump mmix
+
+            for d in dump_smix(&inav).await.unwrap() {
+                println!("smix {}", d);
+            }
+
+            // dump serial
+            // dump aux
+            // dump map
+            // dump osd_layout
+            // feature
+            // dump set
+
+        }
         ("reboot", Some(_)) => {
             inav.reboot().await.unwrap();
         }
@@ -676,7 +688,7 @@ async fn main() {
     }
 }
 
-async fn list_settings(inav: &inav_msp_lib::INavMsp) -> Result<Vec<inav_msp_lib::SettingInfo>, &str> {
+async fn list_settings(inav: &INavMsp) -> Result<Vec<inav_msp_lib::SettingInfo>, &str> {
     let pg_settings = inav.get_pg_settings().await.unwrap();
     let mut setting_ids: Vec<u16> = pg_settings
         .iter()
@@ -688,6 +700,23 @@ async fn list_settings(inav: &inav_msp_lib::INavMsp) -> Result<Vec<inav_msp_lib:
         .iter()
         .map(|id| inav.get_setting_info_by_id(&id));
     return try_join_all(setting_info_futures).await;
+}
+
+async fn dump_smix(inav: &INavMsp) -> Result<Vec<String>, &str> {
+    let mixers = inav.get_servo_mix_rules().await?;
+    let dump: Vec<String> = mixers
+        .iter()
+        .enumerate()
+        .map(|(i, m)| format!("{} {} {} {} {} {}",
+                              i,
+                              m.target_channel,
+                              m.input_source,
+                              m.rate,
+                              m.speed,
+                              m.min)
+        ).collect();
+
+    return Ok(dump);
 }
 
 fn setting_to_str(s: &inav_msp_lib::SettingInfo) -> String {
@@ -724,7 +753,7 @@ fn setting_to_str(s: &inav_msp_lib::SettingInfo) -> String {
             let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<f32>());
             return f32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
         }
-        SettingType::VarString => inav_msp_lib::INavMsp::str_from_u8_nul_utf8(&s.value).unwrap().to_owned(),
+        SettingType::VarString => INavMsp::str_from_u8_nul_utf8(&s.value).unwrap().to_owned(),
     };
 }
 
