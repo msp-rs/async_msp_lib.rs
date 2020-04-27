@@ -318,16 +318,9 @@ async fn main() {
                     inav.set_mode_range(u8::from_str(index).unwrap(), range).await.unwrap();
                 },
                 ("", None) => {
-                    let ranges = inav.get_mode_ranges().await.unwrap();
-                    for (i, r) in ranges.iter().enumerate() {
-                        println!(
-                            "{} {} {} {} {}",
-                            i,
-                            r.box_id,
-                            r.aux_channel_index.to_primitive(),
-                            (r.start_step as u32) * 25 + 900,
-                            (r.end_step as u32) * 25 + 900
-                        );
+                    let dump = dump_aux(&inav).await.unwrap();
+                    for d in dump {
+                        println!("{}", d);
                     }
                 },
                 _ => unreachable!(),
@@ -660,7 +653,11 @@ async fn main() {
             }
 
             // dump serial
-            // dump aux
+
+            for d in dump_aux(&inav).await.unwrap() {
+                println!("aux {}", d);
+            }
+
             // dump map
             // dump osd_layout
             // feature
@@ -695,6 +692,23 @@ async fn list_settings(inav: &INavMsp) -> Result<Vec<inav_msp_lib::SettingInfo>,
         .iter()
         .map(|id| inav.get_setting_info_by_id(&id));
     return try_join_all(setting_info_futures).await;
+}
+
+async fn dump_aux(inav: &INavMsp) -> Result<Vec<String>, &str> {
+    let ranges = inav.get_mode_ranges().await?;
+    let dump: Vec<String> = ranges
+        .iter()
+        .enumerate()
+        .map(|(i, r)| format!(
+            "{} {} {} {} {}",
+            i,
+            r.box_id,
+            r.aux_channel_index.to_primitive(),
+            (r.start_step as u32) * 25 + 900,
+            (r.end_step as u32) * 25 + 900)
+        ).collect();
+
+    return Ok(dump);
 }
 
 async fn dump_mmix(inav: &INavMsp) -> Result<Vec<String>, &str> {
