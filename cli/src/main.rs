@@ -421,16 +421,7 @@ async fn main() {
                     inav.set_rx_map(rx_map).await.unwrap();
                 },
                 ("", None) => {
-                    let r = inav.get_rx_map().await.unwrap();
-                    let map_name = match r.map {
-                        [1, 2, 3, 0] => "TAER",
-                        [0, 1, 3, 2] => "AETR",
-                        _ => {
-                            eprintln!("Unsupported map");
-                            return;
-                        },
-                    };
-                    println!("{}", map_name);
+                    println!("map {}", dump_map(&inav).await.unwrap());
                 },
                 _ => unreachable!(),
             }
@@ -651,7 +642,8 @@ async fn main() {
                 println!("aux {}", d);
             }
 
-            // dump map
+            println!("map {}", dump_map(&inav).await.unwrap());
+
             // dump osd_layout
             // feature
             // dump set
@@ -735,6 +727,18 @@ async fn dump_smix(inav: &INavMsp) -> Result<Vec<String>, &str> {
         ).collect();
 
     return Ok(dump);
+}
+
+async fn dump_map(inav: &INavMsp) -> Result<String, &str> {
+    let map = inav.get_rx_map().await?;
+
+    let map_name = match map.map {
+        [1, 2, 3, 0] => "TAER",
+        [0, 1, 3, 2] => "AETR",
+        _ => return Err("Unsupported map"),
+    };
+
+    Ok(map_name.to_owned())
 }
 
 async fn dump_serial(inav: &INavMsp) -> Result<Vec<String>, &str> {
