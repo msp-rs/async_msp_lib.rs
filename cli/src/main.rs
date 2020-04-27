@@ -464,18 +464,9 @@ async fn main() {
                     inav.set_serial_settings(vec![serial]).await.unwrap();
                 },
                 ("", None) => {
-                    let serials = inav.get_serial_settings().await.unwrap();
-
-                    for s in serials.iter(){
-                        println!(
-                            "{} {} {} {} {} {}",
-                            s.identifier as u8,
-                            s.function_mask,
-                            baudrate_to_string(&s.msp_baudrate_index).unwrap(),
-                            baudrate_to_string(&s.gps_baudrate_index).unwrap(),
-                            baudrate_to_string(&s.telemetry_baudrate_index).unwrap(),
-                            baudrate_to_string(&s.peripheral_baudrate_index).unwrap(),
-                        );
+                    let dump = dump_serial(&inav).await.unwrap();
+                    for d in dump {
+                        println!("{}", d);
                     }
                 },
                 _ => unreachable!(),
@@ -652,7 +643,9 @@ async fn main() {
                 println!("smix {}", d);
             }
 
-            // dump serial
+            for d in dump_serial(&inav).await.unwrap() {
+                println!("serial {}", d);
+            }
 
             for d in dump_aux(&inav).await.unwrap() {
                 println!("aux {}", d);
@@ -739,6 +732,22 @@ async fn dump_smix(inav: &INavMsp) -> Result<Vec<String>, &str> {
                               m.rate,
                               m.speed,
                               m.min)
+        ).collect();
+
+    return Ok(dump);
+}
+
+async fn dump_serial(inav: &INavMsp) -> Result<Vec<String>, &str> {
+    let serials = inav.get_serial_settings().await?;
+    let dump: Vec<String> = serials
+        .iter()
+        .map(|s| format!("{} {} {} {} {} {}",
+                         s.identifier as u8,
+                         s.function_mask,
+                         baudrate_to_string(&s.msp_baudrate_index).unwrap(),
+                         baudrate_to_string(&s.gps_baudrate_index).unwrap(),
+                         baudrate_to_string(&s.telemetry_baudrate_index).unwrap(),
+                         baudrate_to_string(&s.peripheral_baudrate_index).unwrap())
         ).collect();
 
     return Ok(dump);
