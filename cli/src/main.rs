@@ -309,26 +309,7 @@ async fn main() {
                     }
 
                     let value = set_matches.value_of("value").unwrap();
-                    let mut split_iter = value.split_whitespace();
-                    let index = split_iter.next().unwrap();
-                    let box_id = split_iter.next().unwrap();
-                    let aux_channel_index = split_iter.next().unwrap();
-                    let start_step = split_iter.next().unwrap();
-                    let end_step = split_iter.next().unwrap();
-
-                    let start_step_parsed = u32::from_str(start_step).unwrap();
-                    let end_step_parsed = u32::from_str(end_step).unwrap();
-
-                    let range = MspModeRange {
-                        box_id: u8::from_str(box_id).unwrap(),
-                        aux_channel_index: MspRcChannel::from_primitive(
-                            u8::from_str(aux_channel_index).unwrap()
-                        ).unwrap(),
-                        start_step: ((start_step_parsed - 900) / 25) as u8,
-                        end_step: ((end_step_parsed - 900) / 25) as u8,
-                    };
-
-                    inav.set_mode_range(u8::from_str(index).unwrap(), range).await.unwrap();
+                    upload_aux(&inav, value).await.unwrap();
                 },
                 ("", None) => {
                     let dump = dump_aux(&inav).await.unwrap();
@@ -689,10 +670,26 @@ async fn main() {
                 None => (),
             };
 
+            match lookup.get("aux") {
+                Some(values) => {
+                    let mut futures = values
+                        .iter()
+                        .map(|v| upload_aux(&inav, v))
+                        .collect::<FuturesUnordered<_>>();
+
+                    loop {
+                        match futures.next().await {
+                            Some(result) => println!("aux {}", result.unwrap()),
+                            None => break,
+                        }
+                    }
+                },
+                None => (),
+            };
+
             println!("Done!");
 
 
-            // upload aux
             // upload map
             // upload osd_layout
             // upload feature
@@ -726,6 +723,30 @@ async fn describe_settings(inav: &INavMsp) -> Result<Vec<inav_msp_lib::SettingIn
         .iter()
         .map(|id| inav.get_setting_info_by_id(&id));
     return try_join_all(setting_info_futures).await;
+}
+
+async fn upload_aux<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+    let mut split_iter = value.split_whitespace();
+    let index = split_iter.next().unwrap();
+    let box_id = split_iter.next().unwrap();
+    let aux_channel_index = split_iter.next().unwrap();
+    let start_step = split_iter.next().unwrap();
+    let end_step = split_iter.next().unwrap();
+
+    let start_step_parsed = u32::from_str(start_step).unwrap();
+    let end_step_parsed = u32::from_str(end_step).unwrap();
+
+    let range = MspModeRange {
+        box_id: u8::from_str(box_id).unwrap(),
+        aux_channel_index: MspRcChannel::from_primitive(
+            u8::from_str(aux_channel_index).unwrap()
+        ).unwrap(),
+        start_step: ((start_step_parsed - 900) / 25) as u8,
+        end_step: ((end_step_parsed - 900) / 25) as u8,
+    };
+
+    inav.set_mode_range(u8::from_str(index).unwrap(), range).await?;
+    Ok(value)
 }
 
 async fn dump_aux(inav: &INavMsp) -> Result<Vec<String>, &str> {
