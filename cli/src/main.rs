@@ -19,6 +19,7 @@ use std::time::Duration;
 use std::iter::Iterator;
 use std::str::FromStr;
 use futures::future::try_join_all;
+use futures::stream::FuturesUnordered;
 use clap_v3::{App, AppSettings, Arg};
 use multiwii_serial_protocol::structs::*;
 use std::convert::TryInto;
@@ -285,10 +286,16 @@ async fn main() {
                         (i, buf_val)
                     }).collect::<Vec<(&u16, Vec<u8>)>>().await;
 
-                    let set_setting_futures = id_buf_valus.iter()
-                        .map(|(i, v)| inav.set_setting_by_id(i, v));
-                    println!("writing settings");
-                    try_join_all(set_setting_futures).await.unwrap();
+                    let mut set_setting_futures = id_buf_valus.iter()
+                        .map(|(i, v)| inav.set_setting_by_id(i, v))
+                        .collect::<FuturesUnordered<_>>();
+
+                    loop {
+                        match set_setting_futures.next().await {
+                            Some(result) => println!("finished future {}", result.unwrap()),
+                            None => break,
+                        }
+                    }
                 },
                 ("", None) => println!("No subcommand was used"),
                 _ => unreachable!(),
@@ -651,25 +658,39 @@ async fn main() {
 
             match lookup.get("mmix") {
                 Some(values) => {
-                    let promises = values
+                    let mut futures = values
                         .iter()
-                        .map(|v| upload_mmix(&inav, v));
+                        .map(|v| upload_mmix(&inav, v))
+                        .collect::<FuturesUnordered<_>>();
 
-                    try_join_all(promises).await.unwrap();
+                    loop {
+                        match futures.next().await {
+                            Some(result) => println!("finished future {}", result.unwrap()),
+                            None => break,
+                        }
+                    }
                 }
                 None => (),
             };
 
             match lookup.get("smix") {
                 Some(values) => {
-                    let promises = values
+                    let mut futures = values
                         .iter()
-                        .map(|v| upload_smix(&inav, v));
+                        .map(|v| upload_smix(&inav, v))
+                        .collect::<FuturesUnordered<_>>();
 
-                    try_join_all(promises).await.unwrap();
+                    loop {
+                        match futures.next().await {
+                            Some(result) => println!("finished future {}", result.unwrap()),
+                            None => break,
+                        }
+                    }
                 },
                 None => (),
             };
+
+            println!("Done!");
 
             // upload serial
             // upload aux
@@ -725,7 +746,7 @@ async fn dump_aux(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_mmix<'a>(inav: &'a INavMsp, value: &str) -> Result<(), &'a str> {
+async fn upload_mmix<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
     let mut split_iter = value.split_whitespace();
     let index = split_iter.next().unwrap();
     let throttle = split_iter.next().unwrap();
@@ -740,7 +761,8 @@ async fn upload_mmix<'a>(inav: &'a INavMsp, value: &str) -> Result<(), &'a str> 
         yaw: (f32::from_str(yaw).unwrap() + 2f32) as u16 * 1000,
     };
 
-    Ok(inav.set_motor_mixer(u8::from_str(index).unwrap(), mmix).await?)
+    inav.set_motor_mixer(u8::from_str(index).unwrap(), mmix).await?;
+    Ok(value)
 }
 
 async fn dump_mmix(inav: &INavMsp) -> Result<Vec<String>, &str> {
@@ -759,7 +781,7 @@ async fn dump_mmix(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_smix<'a>(inav: &'a INavMsp, value: &str) -> Result<(), &'a str> {
+async fn upload_smix<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
     let mut split_iter = value.split_whitespace();
 
     let index = split_iter.next().unwrap();
@@ -778,7 +800,8 @@ async fn upload_smix<'a>(inav: &'a INavMsp, value: &str) -> Result<(), &'a str> 
         box_id: 0,
     };
 
-    Ok(inav.set_servo_mix_rule(u8::from_str(index).unwrap(), smix).await?)
+    inav.set_servo_mix_rule(u8::from_str(index).unwrap(), smix).await?;
+    Ok(value)
 }
 
 async fn dump_smix(inav: &INavMsp) -> Result<Vec<String>, &str> {
