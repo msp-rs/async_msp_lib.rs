@@ -25,6 +25,7 @@ use std::convert::TryInto;
 use std::collections::HashMap;
 use packed_struct::PrimitiveEnum;
 use inav_msp_lib::INavMsp;
+use itertools::Itertools;
 
 
 static FEATURE_NAMES: [&str; 32] = [
@@ -267,7 +268,7 @@ async fn main() {
                         .iter()
                         .enumerate()
                         .fold(HashMap::new(), |mut acc, (i, s) | {
-                            acc.insert(s.name.clone(), (i as u16, s));
+                            acc.insert(s.name.to_owned(), (i as u16, s));
                             acc
                         });
 
@@ -358,25 +359,7 @@ async fn main() {
                     }
 
                     let value = set_matches.value_of("value").unwrap();
-                    let mut split_iter = value.split_whitespace();
-
-                    let index = split_iter.next().unwrap();
-                    let target_channel = split_iter.next().unwrap();
-                    let input_source = split_iter.next().unwrap();
-                    let rate = split_iter.next().unwrap();
-                    let speed = split_iter.next().unwrap();
-
-                    let smix = MspServoMixRule {
-                        target_channel: u8::from_str(target_channel).unwrap(),
-                        input_source: u8::from_str(input_source).unwrap(),
-                        rate: u16::from_str(rate).unwrap(),
-                        speed: u8::from_str(speed).unwrap(),
-                        min: 0,
-                        max: 100,
-                        box_id: 0,
-                    };
-
-                    inav.set_servo_mix_rule(u8::from_str(index).unwrap(), smix).await.unwrap();
+                    upload_smix(&inav, value).await.unwrap();
                 },
                 ("", None) => {
                     let dump = dump_smix(&inav).await.unwrap();
@@ -663,19 +646,31 @@ async fn main() {
                     return acc;
                 }).await;
 
-            let set_values_results = valid_set_lines.iter().fold(vec![], |mut acc, (cmd, value)| {
-                let promise = match cmd.as_str() {
-                    "mmix" => upload_mmix(&inav, value),
-                    _ => return acc,
-                };
 
-                acc.push(promise);
-                return acc;
-            });
+            let lookup = valid_set_lines.into_iter().into_group_map();
 
-            try_join_all(set_values_results).await.unwrap();
+            match lookup.get("mmix") {
+                Some(values) => {
+                    let promises = values
+                        .iter()
+                        .map(|v| upload_mmix(&inav, v));
 
-            // upload smix
+                    try_join_all(promises).await.unwrap();
+                }
+                None => (),
+            };
+
+            match lookup.get("smix") {
+                Some(values) => {
+                    let promises = values
+                        .iter()
+                        .map(|v| upload_smix(&inav, v));
+
+                    try_join_all(promises).await.unwrap();
+                },
+                None => (),
+            };
+
             // upload serial
             // upload aux
             // upload map
@@ -762,6 +757,28 @@ async fn dump_mmix(inav: &INavMsp) -> Result<Vec<String>, &str> {
         ).collect();
 
     return Ok(dump);
+}
+
+async fn upload_smix<'a>(inav: &'a INavMsp, value: &str) -> Result<(), &'a str> {
+    let mut split_iter = value.split_whitespace();
+
+    let index = split_iter.next().unwrap();
+    let target_channel = split_iter.next().unwrap();
+    let input_source = split_iter.next().unwrap();
+    let rate = split_iter.next().unwrap();
+    let speed = split_iter.next().unwrap();
+
+    let smix = MspServoMixRule {
+        target_channel: u8::from_str(target_channel).unwrap(),
+        input_source: u8::from_str(input_source).unwrap(),
+        rate: u16::from_str(rate).unwrap(),
+        speed: u8::from_str(speed).unwrap(),
+        min: 0,
+        max: 100,
+        box_id: 0,
+    };
+
+    Ok(inav.set_servo_mix_rule(u8::from_str(index).unwrap(), smix).await?)
 }
 
 async fn dump_smix(inav: &INavMsp) -> Result<Vec<String>, &str> {
