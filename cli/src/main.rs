@@ -402,28 +402,7 @@ async fn main() {
                     }
 
                     let value = set_matches.value_of("value").unwrap();
-                    let mut split_iter = value.split_whitespace();
-
-                    let _layout_index = split_iter.next().unwrap();
-                    let item_pos = u8::from_str(split_iter.next().unwrap()).unwrap();
-                    let col = u8::from_str(split_iter.next().unwrap()).unwrap();
-                    let row = u8::from_str(split_iter.next().unwrap()).unwrap();
-                    let vis = split_iter.next().unwrap(); // v h
-                    let is_visible: u16 = match vis {
-                        "V" => 0x0800,
-                        "H" => 0,
-                        _ => 0
-                    };
-
-                    let field: u16 = ((col as u16) | ((row as u16) << 5)) | is_visible;
-                    let bytes = field.to_le_bytes();
-
-                    let item = MspOsdItemPosition {
-                        col: bytes[0],
-                        row: bytes[1],
-                    };
-
-                    inav.set_osd_config_item(item_pos, item).await.unwrap();
+                    upload_osd_layout(&inav, value).await.unwrap();
                 },
                 ("", None) => {
                     for d in dump_osd_layout(&inav).await.unwrap() {
@@ -691,9 +670,25 @@ async fn main() {
                 None => (),
             };
 
+            match lookup.get("osd_layout") {
+                Some(values) => {
+                    let mut futures = values
+                        .iter()
+                        .map(|v| upload_osd_layout(&inav, v))
+                        .collect::<FuturesUnordered<_>>();
+
+                    loop {
+                        match futures.next().await {
+                            Some(result) => println!("osd_layout {}", result.unwrap()),
+                            None => break,
+                        }
+                    }
+                },
+                None => (),
+            };
+
             println!("Done!");
 
-            // upload osd_layout
             // upload feature
             // upload set
         }
@@ -907,6 +902,32 @@ async fn dump_serial(inav: &INavMsp) -> Result<Vec<String>, &str> {
         ).collect();
 
     return Ok(dump);
+}
+
+async fn upload_osd_layout<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+    let mut split_iter = value.split_whitespace();
+
+    let _layout_index = split_iter.next().unwrap();
+    let item_pos = u8::from_str(split_iter.next().unwrap()).unwrap();
+    let col = u8::from_str(split_iter.next().unwrap()).unwrap();
+    let row = u8::from_str(split_iter.next().unwrap()).unwrap();
+    let vis = split_iter.next().unwrap(); // v h
+    let is_visible: u16 = match vis {
+        "V" => 0x0800,
+        "H" => 0,
+        _ => 0
+    };
+
+    let field: u16 = ((col as u16) | ((row as u16) << 5)) | is_visible;
+    let bytes = field.to_le_bytes();
+
+    let item = MspOsdItemPosition {
+        col: bytes[0],
+        row: bytes[1],
+    };
+
+    inav.set_osd_config_item(item_pos, item).await?;
+    Ok(value)
 }
 
 async fn dump_osd_layout(inav: &INavMsp) -> Result<Vec<String>, &str> {
