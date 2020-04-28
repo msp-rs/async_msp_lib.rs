@@ -367,20 +367,7 @@ async fn main() {
 
                     let value = set_matches.value_of("value").unwrap();
 
-                    let map_val = match value {
-                        "TAER" => [1, 2, 3, 0],
-                        "AETR" => [0, 1, 3, 2],
-                        _ => {
-                            eprintln!("Unsupported map");
-                            return;
-                        },
-                    };
-
-                    let rx_map = MspRxMap {
-                        map: map_val,
-                    };
-
-                    inav.set_rx_map(rx_map).await.unwrap();
+                    upload_map(&inav, value).await.unwrap();
                 },
                 ("", None) => {
                     println!("map {}", dump_map(&inav).await.unwrap());
@@ -687,10 +674,25 @@ async fn main() {
                 None => (),
             };
 
+            match lookup.get("map") {
+                Some(values) => {
+                    let mut futures = values
+                        .iter()
+                        .map(|v| upload_map(&inav, v))
+                        .collect::<FuturesUnordered<_>>();
+
+                    loop {
+                        match futures.next().await {
+                            Some(result) => println!("map {}", result.unwrap()),
+                            None => break,
+                        }
+                    }
+                },
+                None => (),
+            };
+
             println!("Done!");
 
-
-            // upload map
             // upload osd_layout
             // upload feature
             // upload set
@@ -839,6 +841,21 @@ async fn dump_smix(inav: &INavMsp) -> Result<Vec<String>, &str> {
         ).collect();
 
     return Ok(dump);
+}
+
+async fn upload_map<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+    let map_val = match value {
+        "TAER" => [1, 2, 3, 0],
+        "AETR" => [0, 1, 3, 2],
+        _ => return Err("Unsupported map"),
+    };
+
+    let rx_map = MspRxMap {
+        map: map_val,
+    };
+
+    inav.set_rx_map(rx_map).await?;
+    Ok(value)
 }
 
 async fn dump_map(inav: &INavMsp) -> Result<String, &str> {
