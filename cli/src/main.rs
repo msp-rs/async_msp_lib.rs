@@ -415,25 +415,7 @@ async fn main() {
                     }
 
                     let value = set_matches.value_of("value").unwrap();
-                    let mut split_iter = value.split_whitespace();
-
-                    let identifier = split_iter.next().unwrap();
-                    let function_mask = split_iter.next().unwrap();
-                    let msp_baudrate_index = split_iter.next().unwrap();
-                    let gps_baudrate_index = split_iter.next().unwrap();
-                    let telemetry_baudrate_index = split_iter.next().unwrap();
-                    let peripheral_baudrate_index = split_iter.next().unwrap();
-
-                    let serial = MspSerialSetting {
-                        identifier: u8_to_serial_identifier(u8::from_str(identifier).unwrap()).unwrap(),
-                        function_mask: u32::from_str(function_mask).unwrap(),
-                        msp_baudrate_index: string_to_baudrate(msp_baudrate_index).unwrap(),
-                        gps_baudrate_index: string_to_baudrate(gps_baudrate_index).unwrap(),
-                        telemetry_baudrate_index: string_to_baudrate(telemetry_baudrate_index).unwrap(),
-                        peripheral_baudrate_index: string_to_baudrate(peripheral_baudrate_index).unwrap(),
-                    };
-
-                    inav.set_serial_settings(vec![serial]).await.unwrap();
+                    upload_serial(&inav, value).await.unwrap();
                 },
                 ("", None) => {
                     let dump = dump_serial(&inav).await.unwrap();
@@ -665,7 +647,7 @@ async fn main() {
 
                     loop {
                         match futures.next().await {
-                            Some(result) => println!("finished future {}", result.unwrap()),
+                            Some(result) => println!("mmix {}", result.unwrap()),
                             None => break,
                         }
                     }
@@ -682,7 +664,24 @@ async fn main() {
 
                     loop {
                         match futures.next().await {
-                            Some(result) => println!("finished future {}", result.unwrap()),
+                            Some(result) => println!("smix {}", result.unwrap()),
+                            None => break,
+                        }
+                    }
+                },
+                None => (),
+            };
+
+            match lookup.get("serial") {
+                Some(values) => {
+                    let mut futures = values
+                        .iter()
+                        .map(|v| upload_serial(&inav, v))
+                        .collect::<FuturesUnordered<_>>();
+
+                    loop {
+                        match futures.next().await {
+                            Some(result) => println!("serial {}", result.unwrap()),
                             None => break,
                         }
                     }
@@ -692,7 +691,7 @@ async fn main() {
 
             println!("Done!");
 
-            // upload serial
+
             // upload aux
             // upload map
             // upload osd_layout
@@ -831,6 +830,29 @@ async fn dump_map(inav: &INavMsp) -> Result<String, &str> {
     };
 
     Ok(map_name.to_owned())
+}
+
+async fn upload_serial<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+    let mut split_iter = value.split_whitespace();
+
+    let identifier = split_iter.next().unwrap();
+    let function_mask = split_iter.next().unwrap();
+    let msp_baudrate_index = split_iter.next().unwrap();
+    let gps_baudrate_index = split_iter.next().unwrap();
+    let telemetry_baudrate_index = split_iter.next().unwrap();
+    let peripheral_baudrate_index = split_iter.next().unwrap();
+
+    let serial = MspSerialSetting {
+        identifier: u8_to_serial_identifier(u8::from_str(identifier).unwrap()).unwrap(),
+        function_mask: u32::from_str(function_mask).unwrap(),
+        msp_baudrate_index: string_to_baudrate(msp_baudrate_index).unwrap(),
+        gps_baudrate_index: string_to_baudrate(gps_baudrate_index).unwrap(),
+        telemetry_baudrate_index: string_to_baudrate(telemetry_baudrate_index).unwrap(),
+        peripheral_baudrate_index: string_to_baudrate(peripheral_baudrate_index).unwrap(),
+    };
+
+    inav.set_serial_settings(vec![serial]).await?;
+    Ok(value)
 }
 
 async fn dump_serial(inav: &INavMsp) -> Result<Vec<String>, &str> {
