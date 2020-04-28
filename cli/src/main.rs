@@ -440,12 +440,7 @@ async fn main() {
                     }
 
                     let value = enable_matches.value_of("value").unwrap();
-                    let index = FEATURE_NAMES.iter().position(|&n| n == value).unwrap();
-                    let mut feat = inav.get_features().await.unwrap();
-
-                    feat.features[index] = true;
-
-                    inav.set_features(feat).await.unwrap();
+                    enable_feature(&inav, value).await.unwrap();
                 },
                 ("disable", Some(disable_matches)) => {
                     if !disable_matches.is_present("value") {
@@ -453,12 +448,7 @@ async fn main() {
                     }
 
                     let value = disable_matches.value_of("value").unwrap();
-                    let index = FEATURE_NAMES.iter().position(|&n| n == value).unwrap();
-                    let mut feat = inav.get_features().await.unwrap();
-
-                    feat.features[index] = false;
-
-                    inav.set_features(feat).await.unwrap();
+                    disable_feature(&inav, value).await.unwrap();
                 }
                 ("", None) => {
                     for d in dump_feature(&inav).await.unwrap() {
@@ -687,9 +677,25 @@ async fn main() {
                 None => (),
             };
 
+            match lookup.get("feature") {
+                Some(values) => {
+                    let mut futures = values
+                        .iter()
+                        .map(|v| upload_feature(&inav, v))
+                        .collect::<FuturesUnordered<_>>();
+
+                    loop {
+                        match futures.next().await {
+                            Some(result) => println!("feature {}", result.unwrap()),
+                            None => break,
+                        }
+                    }
+                },
+                None => (),
+            };
+
             println!("Done!");
 
-            // upload feature
             // upload set
         }
         ("reboot", Some(_)) => {
@@ -949,6 +955,36 @@ async fn dump_osd_layout(inav: &INavMsp) -> Result<Vec<String>, &str> {
         }).collect();
 
     return Ok(dump);
+}
+
+async fn enable_feature<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+    let index = FEATURE_NAMES.iter().position(|&n| n == value).unwrap();
+    let mut feat = inav.get_features().await.unwrap();
+
+    feat.features[index] = true;
+
+    inav.set_features(feat).await?;
+    Ok(value)
+}
+
+async fn disable_feature<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+    let index = FEATURE_NAMES.iter().position(|&n| n == value).unwrap();
+    let mut feat = inav.get_features().await.unwrap();
+
+    feat.features[index] = false;
+
+    inav.set_features(feat).await?;
+    Ok(value)
+}
+
+async fn upload_feature<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+    if &value[..1] == "-" {
+        disable_feature(inav, &value[1..]).await?;
+    } else {
+        enable_feature(inav, value).await?;
+    }
+
+    return Ok(value);
 }
 
 async fn dump_feature(inav: &INavMsp) -> Result<Vec<String>, &str> {
