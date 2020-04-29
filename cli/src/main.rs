@@ -387,21 +387,11 @@ async fn main() {
                         unreachable!();
                     }
 
+                    // because of the async nature of msp-lib, enable and disable calls must be chained
                     let value = set_matches.value_of("value").unwrap();
-                    let mut features = [false; 32];
-
-                    for elem in value.split_whitespace() {
-                        let index = FEATURE_NAMES.iter().position(|&n| n == elem).unwrap();
-                        features[index] = true;
-                    }
-
-                    let set_feat = MspFeatures {
-                        features: features
-                    };
-
-                    inav.set_features(set_feat).await.unwrap();
+                    let values = value.split_whitespace().collect();
+                    upload_features(&inav, values).await.unwrap();
                 },
-                // TODO: because of the async nature of msp-lib, enable and disable calls must be chained
                 ("enable", Some(enable_matches)) => {
                     if !enable_matches.is_present("value") {
                         unreachable!();
@@ -659,17 +649,8 @@ async fn main() {
 
             match lookup.get("feature") {
                 Some(values) => {
-                    let mut futures = values
-                        .iter()
-                        .map(|v| upload_feature(&inav, v))
-                        .collect::<FuturesUnordered<_>>();
-
-                    loop {
-                        match futures.next().await {
-                            Some(result) => println!("feature {}", result.unwrap()),
-                            None => break,
-                        }
-                    }
+                    upload_features(&inav, values.iter().map(|l| l.as_str()).collect()).await.unwrap();
+                    println!("feature {}", values.join(" "))
                 },
                 None => (),
             };
@@ -969,6 +950,23 @@ async fn upload_feature<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b
     }
 
     return Ok(value);
+}
+
+async fn upload_features<'a, 'b>(inav: &'a INavMsp, values:Vec<&str>) -> Result<(), &'a str> {
+    let mut feat = inav.get_features().await.unwrap();
+
+    for v in values {
+        if &v[..1] == "-" {
+            let index = FEATURE_NAMES.iter().position(|&n| n == &v[1..]).unwrap();
+            feat.features[index] = false;
+        } else {
+            let index = FEATURE_NAMES.iter().position(|&n| n == v).unwrap();
+            feat.features[index] = true;
+        }
+    }
+
+    inav.set_features(feat).await?;
+    Ok(())
 }
 
 async fn dump_feature(inav: &INavMsp) -> Result<Vec<String>, &str> {
