@@ -25,7 +25,7 @@ use multiwii_serial_protocol::structs::*;
 use std::convert::TryInto;
 use std::collections::HashMap;
 use packed_struct::PrimitiveEnum;
-use inav_msp_lib::INavMsp;
+use async_msp_lib::{INavMsp, SettingInfo};
 use itertools::Itertools;
 
 
@@ -262,40 +262,8 @@ async fn main() {
                         .await.unwrap();
                     let f = BufReader::new(f);
 
-                    println!("listing settings");
-                    let setting_list = describe_settings(&inav).await.unwrap();
-
-                    let setting_list_key_vals = setting_list
-                        .iter()
-                        .enumerate()
-                        .fold(HashMap::new(), |mut acc, (i, s) | {
-                            acc.insert(s.name.to_owned(), (i as u16, s));
-                            acc
-                        });
-
-                    let id_buf_valus = f.lines().map(|l| {
-                        let line = l.unwrap();
-                        let mut split_iter = line.split_whitespace();
-                        let name = split_iter.next().unwrap().to_string();
-                        let val = match split_iter.next() {
-                            Some(v) => v.to_string(),
-                            None => "".to_owned(),
-                        };
-                        let (i, s) = setting_list_key_vals.get(&name).unwrap(); // TODO: write warnning if setting name not found
-                        let buf_val = setting_to_vec(&s, &val).unwrap();
-                        (i, buf_val)
-                    }).collect::<Vec<(&u16, Vec<u8>)>>().await;
-
-                    let mut set_setting_futures = id_buf_valus.iter()
-                        .map(|(i, v)| inav.set_setting_by_id(i, v))
-                        .collect::<FuturesUnordered<_>>();
-
-                    loop {
-                        match set_setting_futures.next().await {
-                            Some(result) => println!("finished future {}", result.unwrap()),
-                            None => break,
-                        }
-                    }
+                    let settings_list = f.lines().map(|l| l.unwrap()).collect().await;
+                    upload_common_settings(&inav, settings_list).await.unwrap();
                 },
                 ("", None) => println!("No subcommand was used"),
                 _ => unreachable!(),
@@ -556,9 +524,21 @@ async fn main() {
 
             let valid_set_lines = f
                 .lines()
-                .fold(vec![], |mut acc, line| {
-                    let set_command: Vec<String> = line
-                        .unwrap()
+                .map(|l| l.unwrap().to_string())
+                .map(|l| {
+                    let parts = l
+                        .splitn(2, '#')
+                        .collect::<Vec<&str>>();
+
+                    if parts.len() < 2 {
+                        return l.to_string();
+                    }
+
+                    return parts[0].trim().to_string();
+                })
+                .filter(|l| l.len() > 0)
+                .fold(vec![], |mut acc, l| {
+                    let set_command: Vec<String> = l
                         .splitn(2, ' ')
                         .map(|vals| vals.to_owned())
                         .collect();
@@ -694,9 +674,13 @@ async fn main() {
                 None => (),
             };
 
+            match lookup.get("set") {
+                Some(values) => upload_common_settings(&inav, values.to_vec()).await.unwrap(),
+                None => (),
+            };
+
             println!("Done!");
 
-            // upload set
         }
         ("reboot", Some(_)) => {
             inav.reboot().await.unwrap();
@@ -714,7 +698,7 @@ async fn main() {
     }
 }
 
-async fn describe_settings(inav: &INavMsp) -> Result<Vec<inav_msp_lib::SettingInfo>, &str> {
+async fn describe_settings(inav: &INavMsp) -> Result<Vec<SettingInfo>, &str> {
     let pg_settings = inav.get_pg_settings().await.unwrap();
     let mut setting_ids: Vec<u16> = pg_settings
         .iter()
@@ -1003,6 +987,43 @@ async fn dump_feature(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
+async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>) -> Result<(), &'a str> {
+    let setting_list = describe_settings(&inav).await.unwrap();
+
+    let setting_list_key_vals = setting_list
+        .iter()
+        .enumerate()
+        .fold(HashMap::new(), |mut acc, (i, s) | {
+            acc.insert(s.name.to_owned(), (i as u16, s));
+            acc
+        });
+
+    let id_buf_valus = values.iter().map(|v| {
+        let mut split_iter = v.splitn(2, '=');
+        // let mut split_iter = v.split_whitespace();
+        let name = split_iter.next().unwrap().to_string().trim().to_owned();
+        let val = split_iter.next().unwrap().to_string().trim().to_owned();
+        let (i, s) = setting_list_key_vals.get(&name).unwrap(); // TODO: write warnning if setting name not found
+        let buf_val = setting_to_vec(&s, &val).unwrap();
+        (i, buf_val)
+    }).collect::<Vec<(&u16, Vec<u8>)>>();
+
+    let mut set_setting_futures = id_buf_valus.iter()
+        .map(|(i, v)| inav.set_setting_by_id(i, v))
+        .collect::<FuturesUnordered<_>>();
+
+    loop {
+        match set_setting_futures.next().await {
+            Some(result) => println!("set {}", result.unwrap()),
+            None => return Ok(()),
+        }
+    }
+    // inav.set_osd_config_item(item_pos, item).await?;
+    // Ok(value)
+}
+
+
+
 async fn dump_common_setting(inav: &INavMsp) -> Result<Vec<String>, &str> {
     let settings = describe_settings(inav).await?;
     let dump: Vec<String> = settings
@@ -1013,7 +1034,7 @@ async fn dump_common_setting(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-fn setting_to_str(s: &inav_msp_lib::SettingInfo) -> String {
+fn setting_to_str(s: &SettingInfo) -> String {
     return match s.info.setting_type {
         SettingType::VarUint8 => {
             let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<u8>());
@@ -1051,7 +1072,7 @@ fn setting_to_str(s: &inav_msp_lib::SettingInfo) -> String {
     };
 }
 
-fn setting_to_vec<'a>(s: &inav_msp_lib::SettingInfo, value: &str) -> Result<Vec<u8>, &'a str> {
+fn setting_to_vec<'a>(s: &SettingInfo, value: &str) -> Result<Vec<u8>, &'a str> {
     return match s.info.setting_type {
         SettingType::VarUint8 => {
             if s.info.setting_mode == SettingMode::ModeLookup {
@@ -1066,7 +1087,11 @@ fn setting_to_vec<'a>(s: &inav_msp_lib::SettingInfo, value: &str) -> Result<Vec<
                 }
             }
 
-            return Ok(value.parse::<u8>().unwrap().to_le_bytes().to_vec());
+
+            return match value.parse::<u8>() {
+                Ok(val) => Ok(val.to_le_bytes().to_vec()),
+                _ => Err("Failed to parse"),
+            };
         },
         SettingType::VarInt8 => Ok(value.parse::<i8>().unwrap().to_le_bytes().to_vec()),
         SettingType::VarUint16 => Ok(value.parse::<u16>().unwrap().to_le_bytes().to_vec()),
