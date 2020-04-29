@@ -942,16 +942,6 @@ async fn disable_feature<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'
     Ok(value)
 }
 
-async fn upload_feature<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
-    if &value[..1] == "-" {
-        disable_feature(inav, &value[1..]).await?;
-    } else {
-        enable_feature(inav, value).await?;
-    }
-
-    return Ok(value);
-}
-
 async fn upload_features<'a, 'b>(inav: &'a INavMsp, values:Vec<&str>) -> Result<(), &'a str> {
     let mut feat = inav.get_features().await.unwrap();
 
