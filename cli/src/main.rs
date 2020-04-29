@@ -1012,12 +1012,11 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>) -> R
 
     loop {
         match set_setting_futures.next().await {
-            Some(result) => println!("set {}", result.unwrap()),
+            Some(Ok(id)) => println!("set {}", setting_list[*id as usize].name),
+            Some(Err(e)) => return Err(e),
             None => return Ok(()),
         }
     }
-    // inav.set_osd_config_item(item_pos, item).await?;
-    // Ok(value)
 }
 
 
