@@ -1047,10 +1047,6 @@ fn setting_to_str(s: &SettingInfo) -> String {
             let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<u32>());
             return u32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
         }
-        SettingType::VarInt32 => { // TODO: non standart in betaflight and inav
-            let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<i32>());
-            return i32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
-        }
         SettingType::VarFloat => {
             let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<f32>());
             return f32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
@@ -1084,7 +1080,6 @@ fn setting_to_vec<'a>(s: &SettingInfo, value: &str) -> Result<Vec<u8>, &'a str> 
         SettingType::VarUint16 => Ok(value.parse::<u16>().unwrap().to_le_bytes().to_vec()),
         SettingType::VarInt16 => Ok(value.parse::<i16>().unwrap().to_le_bytes().to_vec()),
         SettingType::VarUint32 => Ok(value.parse::<u32>().unwrap().to_le_bytes().to_vec()),
-        SettingType::VarInt32 => Ok(value.parse::<i32>().unwrap().to_le_bytes().to_vec()),
         SettingType::VarFloat => Ok(value.parse::<f32>().unwrap().to_le_bytes().to_vec()),
         SettingType::VarString => Ok(value.as_bytes().to_vec()),
     };
