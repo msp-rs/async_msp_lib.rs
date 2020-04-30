@@ -1015,7 +1015,7 @@ async fn dump_common_setting(inav: &INavMsp) -> Result<Vec<String>, &str> {
     let settings = describe_settings(inav).await?;
     let dump: Vec<String> = settings
         .iter()
-        .map(|s| format!("{} {}", &s.name, setting_to_str(&s)))
+        .map(|s| format!("{} = {}", &s.name, setting_to_str(&s)))
         .collect();
 
     return Ok(dump);
