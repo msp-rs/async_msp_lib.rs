@@ -1,10 +1,10 @@
 extern crate alloc;
-extern crate multiwii_serial_protocol;
+extern crate multiwii_serial_protocol_v2;
 extern crate serialport;
 extern crate packed_struct;
 
-use multiwii_serial_protocol::{MspCommandCode, MspPacket, MspPacketDirection};
-use multiwii_serial_protocol::structs::*;
+use multiwii_serial_protocol_v2::{MspCommandCode, MspPacket, MspPacketDirection};
+use multiwii_serial_protocol_v2::structs::*;
 use serialport::SerialPort;
 use packed_struct::prelude::*;
 
@@ -54,9 +54,9 @@ impl FlashDataFile {
                 };
                 let packed = payload.pack();
 
-                let packet = multiwii_serial_protocol::MspPacket {
-                    cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
-                    direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
+                let packet = MspPacket {
+                    cmd: MspCommandCode::MSP_DATAFLASH_READ as u16,
+                    direction: MspPacketDirection::ToFlightController,
                     data: packed.to_vec(),
                 };
 
@@ -371,9 +371,9 @@ impl INavMsp {
                 };
                 let packed = payload.pack();
 
-                let packet = multiwii_serial_protocol::MspPacket {
-                    cmd: multiwii_serial_protocol::MspCommandCode::MSP_DATAFLASH_READ as u16,
-                    direction: multiwii_serial_protocol::MspPacketDirection::ToFlightController,
+                let packet = MspPacket {
+                    cmd: MspCommandCode::MSP_DATAFLASH_READ as u16,
+                    direction: MspPacketDirection::ToFlightController,
                     data: packed.to_vec(),
                 };
 

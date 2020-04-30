@@ -1,9 +1,9 @@
 extern crate alloc;
-extern crate multiwii_serial_protocol;
+extern crate multiwii_serial_protocol_v2;
 extern crate serialport;
 extern crate packed_struct;
 
-use multiwii_serial_protocol::{MspPacket, MspParser};
+use multiwii_serial_protocol_v2::{MspPacket, MspParser};
 use serialport::SerialPort;
 
 use async_std::sync::{channel, Arc, Mutex, Sender, Receiver};
