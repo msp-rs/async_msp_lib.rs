@@ -1,14 +1,21 @@
 [package]
-name = "async-msp-cli"
+name = "async_msp_cli"
 version = "0.1.0"
 authors = ["Ilya Guterman <amfernusus@gmail.com>"]
 edition = "2018"
+license = "MIT OR Apache-2.0"
+description = "Async msp cli for iNav and BetaFlight"
+repository = "https://github.com/amfern/inav_msp_cli.rs"
+readme = "README.md"
+categories = ["asynchronous", "embedded", "command-line-utilities"]
+keywords = ["msp", "multiwii", "inav", "betaflight"]
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-multiwii_serial_protocol = { version = "0.1.0", path = "../multiwii_serial_protocol.rs" }
-async-msp-lib = { version = "0.1.0", path = "../async-msp-lib.rs" }
+multiwii_serial_protocol_v2 = "0.1.3"
+async_msp_lib = "0.1.0"
 serialport = "3.3.0"
 packed_struct = "0.3"
 packed_struct_codegen = "0.3"

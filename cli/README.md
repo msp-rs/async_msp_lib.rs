@@ -1,3 +1,34 @@
+A Multiwii Serial Protocol (MSP) CLI implementation for Rust
+===========================================
+
+## Introduction
+
+An incomplete implementation of the MSP2 commands, with some Cleanflight, Betaflight and iNav extensions. Allows one to interact with Cleanflight, Betaflight and iNav.
+
+pull blackbox
+set aux
+set mmix
+set serial
+set osd_layout
+set feature
+set smix
+set map
+set common commands
+
+# Installation
+
+...
+
+License: MIT OR Apache-2.0
+
+
+
+
+
+
+
+
+
 for other unrecognized lines in dump, write warnning
 the dump and upload sub commands need to be executed concurrently
 implement "servo" get and set
