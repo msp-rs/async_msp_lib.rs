@@ -1,6 +1,6 @@
 extern crate alloc;
 extern crate async_msp_lib;
-extern crate multiwii_serial_protocol;
+extern crate multiwii_serial_protocol_v2;
 
 extern crate serialport;
 
@@ -21,7 +21,7 @@ use std::str::FromStr;
 use futures::future::try_join_all;
 use futures::stream::FuturesUnordered;
 use clap_v3::{App, AppSettings, Arg};
-use multiwii_serial_protocol::structs::*;
+use multiwii_serial_protocol_v2::structs::*;
 use std::convert::TryInto;
 use std::collections::HashMap;
 use packed_struct::PrimitiveEnum;
