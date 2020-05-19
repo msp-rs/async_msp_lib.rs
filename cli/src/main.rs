@@ -175,6 +175,12 @@ async fn main() {
                 .about("upload all inav settings")
                 .setting(AppSettings::ArgRequiredElseHelp)
                 .arg(Arg::with_name("input").help("settings file path").required(true).takes_value(true))
+                .arg(
+                    Arg::with_name("strict")
+                        .long("strict")
+                        .help("stop if setting not found in fc")
+                        .required(false)
+                )
         )
         .subcommand(
             App::new("reboot")
@@ -263,7 +269,8 @@ async fn main() {
                     let f = BufReader::new(f);
 
                     let settings_list = f.lines().map(|l| l.unwrap()).collect().await;
-                    upload_common_settings(&inav, settings_list).await.unwrap();
+
+                    upload_common_settings(&inav, settings_list, true).await.unwrap();
                 },
                 ("", None) => println!("No subcommand was used"),
                 _ => unreachable!(),
@@ -505,6 +512,8 @@ async fn main() {
                 print!("missing input");
             }
 
+            let is_strict = upload_matches.is_present("strict");
+
             let input = upload_matches.value_of("input").unwrap();
             let f = OpenOptions::new()
                 .read(true)
@@ -554,7 +563,13 @@ async fn main() {
 
                     loop {
                         match futures.next().await {
-                            Some(result) => println!("mmix {}", result.unwrap()),
+                            Some(Ok(result)) => println!("mmix {}", result),
+                            Some(Err(e)) => {
+                                println!("failed to set some mmix {}", e);
+                                if is_strict {
+                                    return;
+                                }
+                            },
                             None => break,
                         }
                     }
@@ -571,7 +586,13 @@ async fn main() {
 
                     loop {
                         match futures.next().await {
-                            Some(result) => println!("smix {}", result.unwrap()),
+                            Some(Ok(result)) => println!("smix {}", result),
+                            Some(Err(e)) => {
+                                println!("failed to set some smix {}", e);
+                                if is_strict {
+                                    return;
+                                }
+                            },
                             None => break,
                         }
                     }
@@ -588,7 +609,13 @@ async fn main() {
 
                     loop {
                         match futures.next().await {
-                            Some(result) => println!("serial {}", result.unwrap()),
+                            Some(Ok(result)) => println!("serial {}", result),
+                            Some(Err(e)) => {
+                                println!("failed to set some serial {}", e);
+                                if is_strict {
+                                    return;
+                                }
+                            },
                             None => break,
                         }
                     }
@@ -605,7 +632,13 @@ async fn main() {
 
                     loop {
                         match futures.next().await {
-                            Some(result) => println!("aux {}", result.unwrap()),
+                            Some(Ok(result)) => println!("aux {}", result),
+                            Some(Err(e)) => {
+                                println!("failed to set some aux {}", e);
+                                if is_strict {
+                                    return;
+                                }
+                            },
                             None => break,
                         }
                     }
@@ -622,7 +655,13 @@ async fn main() {
 
                     loop {
                         match futures.next().await {
-                            Some(result) => println!("map {}", result.unwrap()),
+                            Some(Ok(result)) => println!("map {}", result),
+                            Some(Err(e)) => {
+                                println!("failed to set some map {}", e);
+                                if is_strict {
+                                    return;
+                                }
+                            },
                             None => break,
                         }
                     }
@@ -639,7 +678,13 @@ async fn main() {
 
                     loop {
                         match futures.next().await {
-                            Some(result) => println!("osd_layout {}", result.unwrap()),
+                            Some(Ok(result)) => println!("osd_layout {}", result),
+                            Some(Err(e)) => {
+                                println!("failed to set some osd_layout {}", e);
+                                if is_strict {
+                                   return;
+                                }
+                            },
                             None => break,
                         }
                     }
@@ -649,14 +694,21 @@ async fn main() {
 
             match lookup.get("feature") {
                 Some(values) => {
-                    upload_features(&inav, values.iter().map(|l| l.as_str()).collect()).await.unwrap();
-                    println!("feature {}", values.join(" "))
+                    match upload_features(&inav, values.iter().map(|l| l.as_str()).collect()).await {
+                        Ok(_) => println!("feature {}", values.join(" ")),
+                        Err(e) => {
+                            println!("failed to set features {}", e);
+                            if is_strict {
+                                return;
+                            }
+                        },
+                    }
                 },
                 None => (),
             };
 
             match lookup.get("set") {
-                Some(values) => upload_common_settings(&inav, values.to_vec()).await.unwrap(),
+                Some(values) => upload_common_settings(&inav, values.to_vec(), is_strict).await.unwrap(),
                 None => (),
             };
 
@@ -975,7 +1027,8 @@ async fn dump_feature(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>) -> Result<(), &'a str> {
+async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, strict: bool) -> Result<(), &'a str> {
+    println!("describing settings");
     let setting_list = describe_settings(&inav).await.unwrap();
 
     let setting_list_key_vals = setting_list
@@ -986,15 +1039,47 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>) -> R
             acc
         });
 
-    let id_buf_valus = values.iter().map(|v| {
+    // parse all values to (name, val)
+    let set_settings_list = values.iter().map(|v| {
+        println!("parsing {}", v);
         let mut split_iter = v.splitn(2, '=');
-        // let mut split_iter = v.split_whitespace();
         let name = split_iter.next().unwrap().to_string().trim().to_owned();
         let val = split_iter.next().unwrap().to_string().trim().to_owned();
-        let (i, s) = setting_list_key_vals.get(&name).unwrap(); // TODO: write warnning if setting name not found
-        let buf_val = setting_to_vec(&s, &val).unwrap();
-        (i, buf_val)
-    }).collect::<Vec<(&u16, Vec<u8>)>>();
+        (name, val)
+    }).collect::<Vec<(String, String)>>();
+
+
+    let id_buf_valus_res = set_settings_list.iter().try_fold(vec![], |mut acc, (name, val)| {
+        let (i, s) = match setting_list_key_vals.get(name) {
+            Some((i, s)) => (i, s),
+            None => {
+                eprintln!("unsupported setting {}", &name);
+                if strict {
+                    return None;
+                }
+                return Some(acc);
+            }
+        };
+
+        let buf_val = match setting_to_vec(&s, &val) {
+            Ok(buf_val) => buf_val,
+            Err(e) => {
+                eprintln!("unsupported setting value {} {}", &name, e);
+                if strict {
+                    return None;
+                }
+                return Some(acc);
+            }
+        };
+
+        acc.push((i, buf_val));
+        return Some(acc)
+    });
+
+    let id_buf_valus = match id_buf_valus_res {
+        Some(buf) => buf,
+        None => return Err("aborting due to unsupported settings")
+    };
 
     let mut set_setting_futures = id_buf_valus.iter()
         .map(|(i, v)| inav.set_setting_by_id(i, v))
