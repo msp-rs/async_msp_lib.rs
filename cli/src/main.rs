@@ -1059,7 +1059,7 @@ fn setting_to_vec<'a>(s: &SettingInfo, value: &str) -> Result<Vec<u8>, &'a str> 
     return match s.info.setting_type {
         SettingType::VarUint8 => {
             if s.info.setting_mode == SettingMode::ModeLookup {
-                let enum_name = String::from(value);
+                let enum_name = String::from(value).to_uppercase();
                 let index = s.enum_names.iter().position(|r| r == &enum_name);
                 return match index {
                     Some(i) => Ok((i as u8).to_le_bytes().to_vec()),
