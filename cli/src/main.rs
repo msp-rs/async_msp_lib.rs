@@ -130,22 +130,22 @@ async fn main() {
         )
         .subcommand(
             App::new("feature")
-                .about("Get all osd setting")
+                .about("Get all features")
                 .subcommand(
                     App::new("set")
-                        .about("Set osd setting")
+                        .about("Set feature")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
                 )
                 .subcommand(
                     App::new("enable")
-                        .about("Set osd setting")
+                        .about("Enable feature")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
                 )
                 .subcommand(
                     App::new("disable")
-                        .about("Set osd setting")
+                        .about("Disable feature")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
                 )
@@ -583,7 +583,7 @@ async fn main() {
                         match futures.next().await {
                             Some(Ok(result)) => println!("mmix {}", result),
                             Some(Err(e)) => {
-                                println!("failed to set some mmix {}", e);
+                                eprintln!("failed to set some mmix {}", e);
                                 if is_strict {
                                     return;
                                 }
@@ -606,7 +606,7 @@ async fn main() {
                         match futures.next().await {
                             Some(Ok(result)) => println!("smix {}", result),
                             Some(Err(e)) => {
-                                println!("failed to set some smix {}", e);
+                                eprintln!("failed to set some smix {}", e);
                                 if is_strict {
                                     return;
                                 }
@@ -629,7 +629,7 @@ async fn main() {
                         match futures.next().await {
                             Some(Ok(result)) => println!("serial {}", result),
                             Some(Err(e)) => {
-                                println!("failed to set some serial {}", e);
+                                eprintln!("failed to set some serial {}", e);
                                 if is_strict {
                                     return;
                                 }
@@ -652,7 +652,7 @@ async fn main() {
                         match futures.next().await {
                             Some(Ok(result)) => println!("aux {}", result),
                             Some(Err(e)) => {
-                                println!("failed to set some aux {}", e);
+                                eprintln!("failed to set some aux {}", e);
                                 if is_strict {
                                     return;
                                 }
@@ -675,7 +675,7 @@ async fn main() {
                         match futures.next().await {
                             Some(Ok(result)) => println!("map {}", result),
                             Some(Err(e)) => {
-                                println!("failed to set some map {}", e);
+                                eprintln!("failed to set some map {}", e);
                                 if is_strict {
                                     return;
                                 }
@@ -698,7 +698,7 @@ async fn main() {
                         match futures.next().await {
                             Some(Ok(result)) => println!("osd_layout {}", result),
                             Some(Err(e)) => {
-                                println!("failed to set some osd_layout {}", e);
+                                eprintln!("failed to set some osd_layout {}", e);
                                 if is_strict {
                                    return;
                                 }
@@ -715,7 +715,7 @@ async fn main() {
                     match upload_features(&inav, values.iter().map(|l| l.as_str()).collect()).await {
                         Ok(_) => println!("feature {}", values.join(" ")),
                         Err(e) => {
-                            println!("failed to set features {}", e);
+                            eprintln!("failed to set features {}", e);
                             if is_strict {
                                 return;
                             }
