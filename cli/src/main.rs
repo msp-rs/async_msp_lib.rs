@@ -47,7 +47,7 @@ async fn main() {
     let matches = App::new("msp")
         .version("0.0.1")
         .author("Ilya G. <amfernusus@gmail.com>")
-        .about("Interact with msp fligith controller")
+        .about("Interact with msp flight controller")
         .subcommand(
             App::new("setting")
                 .about("Common setting")
@@ -187,6 +187,14 @@ async fn main() {
                 .about("Write settings to eeprom")
         )
         .arg(
+            Arg::with_name("port")
+                .short('p')
+                .long("port")
+                .help("device serial port")
+                .required(false)
+                .takes_value(true)
+        )
+        .arg(
             Arg::with_name("save")
                 .short('s')
                 .long("save")
@@ -219,8 +227,18 @@ async fn main() {
         timeout: Duration::from_millis(1),
     };
 
+    let port = match matches.value_of("port") {
+        Some(p) => String::from(p),
+        None =>  available_ports()
+            .expect("No serial ports")
+            .first()
+            .expect("No serial ports, specify with -p")
+            .port_name
+            .clone()
+    };
+
     // TODO: what stop and start bits are inav using, is every one just using the canonical defalts?
-    let serialport = open_with_settings(&available_ports().expect("No serial port")[0].port_name, &s)
+    let serialport = open_with_settings(&port, &s)
         .expect("Failed to open serial port");
 
     // green-thread 1: read into input channel from serial(reading from serial is blocking)
