@@ -62,6 +62,12 @@ async fn main() {
                         .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
                 )
                 .subcommand(
+                    App::new("get")
+                        .about("get common setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("name").help("The setting name to set").required(true).takes_value(true))
+                )
+                .subcommand(
                     App::new("set-all")
                         .about("Set all common setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
