@@ -61,6 +61,9 @@ async_msp_cli config > /tmp/configs # dump all configs
 async_msp_cli -s -r config set /tmp/configs # restore all configs from file
 ```
 
+[![asciicast](https://asciinema.org/a/v5hnmgQBumlnbONF3z6zeNx8l.svg)](https://asciinema.org/a/v5hnmgQBumlnbONF3z6zeNx8l)
+
+
 The dump has the same syntax as configurator dump command output
 ```
 mmix 0  1.000 -1.000  1.000 -1.000
