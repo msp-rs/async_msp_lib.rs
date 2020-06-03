@@ -4,8 +4,9 @@ A Multiwii Serial Protocol (MSP) CLI
 async_msp_cli is a command line program for configuring rebooting, getting status and downloading blackbox from Cleanflight, Betaflight and iNav.
 This is an incomplete implementation of the MSP2 commands, with some Cleanflight, Betaflight and iNav extensions.
 
-1. mimic iNav, betaflight cli
-2. commands are sent in async to the FC
+1. Mimic iNav, betaflight cli
+2. Send MSP commands asynchronously
+3. Be as fast and efficient as possible
 
 ### Available commands
 ```
