@@ -89,7 +89,7 @@ You can compile from source by
 and installing `async_msp_cli` using Cargo:
 
 ```bash
-cargo install async_msp_cli
+cargo install --locked async_msp_cli
 ```
 
 ```bash
