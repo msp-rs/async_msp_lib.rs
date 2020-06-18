@@ -33,6 +33,9 @@ mmix                            Get all mmix setting
 serial                          Get all serial setting
                   set           Set serial setting
 
+servo                           Get all servo setting
+                  set           Set servo setting
+
 setting           list          Get all common setting
                   set           Set common setting
                   get           get common setting
