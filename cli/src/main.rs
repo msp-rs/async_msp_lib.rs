@@ -105,6 +105,16 @@ async fn main() {
                 )
         )
         .subcommand(
+            App::new("servo")
+                .about("Get all servo setting")
+                .subcommand(
+                    App::new("set")
+                        .about("Set servo setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                )
+        )
+        .subcommand(
             App::new("map")
                 .about("Get all rx map setting")
                 .subcommand(
@@ -350,6 +360,25 @@ async fn main() {
                 _ => unreachable!(),
             }
         }
+        ("servo", Some(servo_matches)) => {
+            match servo_matches.subcommand() {
+                ("set", Some(set_matches)) => {
+                    if !set_matches.is_present("value") {
+                        unreachable!();
+                    }
+
+                    let value = set_matches.value_of("value").unwrap();
+                    upload_servo(&inav, value).await.unwrap();
+                },
+                ("", None) => {
+                    let dump = dump_servo(&inav).await.unwrap();
+                    for d in dump {
+                        println!("{}", d);
+                    }
+                },
+                _ => unreachable!(),
+            }
+        }
         ("map", Some(rx_map_matches)) => {
             match rx_map_matches.subcommand() {
                 ("set", Some(set_matches)) => {
@@ -588,6 +617,29 @@ async fn main() {
                         None => (),
                     };
 
+                    match lookup.get("servo") {
+                        Some(values) => {
+                            let mut futures = values
+                                .iter()
+                                .map(|v| upload_servo(&inav, v))
+                                .collect::<FuturesUnordered<_>>();
+
+                            loop {
+                                match futures.next().await {
+                                    Some(Ok(result)) => println!("servo {}", result),
+                                    Some(Err(e)) => {
+                                        eprintln!("failed to set some servo {}", e);
+                                        if is_strict {
+                                            return;
+                                        }
+                                    },
+                                    None => break,
+                                }
+                            }
+                        },
+                        None => (),
+                    };
+
                     match lookup.get("serial") {
                         Some(values) => {
                             let mut futures = values
@@ -710,6 +762,10 @@ async fn main() {
 
                     for d in dump_smix(&inav).await.unwrap() {
                         println!("smix {}", d);
+                    }
+
+                    for d in dump_servo(&inav).await.unwrap() {
+                        println!("servo {}", d);
                     }
 
                     for d in dump_serial(&inav).await.unwrap() {
@@ -863,6 +919,47 @@ async fn upload_smix<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b st
     };
 
     inav.set_servo_mix_rule(u8::from_str(index).unwrap(), smix).await?;
+    Ok(value)
+}
+
+async fn dump_servo(inav: &INavMsp) -> Result<Vec<String>, &str> {
+    let servo = inav.get_servo_configs().await?;
+    let dump: Vec<String> = servo
+        .iter()
+        .enumerate()
+        .map(|(i, s)| format!("{} {} {} {} {}",
+                              i,
+                              s.min,
+                              s.max,
+                              s.middle,
+                              s.rate)
+        ).collect();
+
+    return Ok(dump);
+}
+
+async fn upload_servo<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+    let mut split_iter = value.split_whitespace();
+
+    // servo 0 1200 1950 1490 100
+    let index = split_iter.next().unwrap();
+    let min = split_iter.next().unwrap();
+    let max = split_iter.next().unwrap();
+    let middle = split_iter.next().unwrap();
+    let rate = split_iter.next().unwrap();
+
+    let servo = MspServoConfig {
+        min: u16::from_str(min).unwrap(),
+        max: u16::from_str(max).unwrap(),
+        middle: u16::from_str(middle).unwrap(),
+        rate: u8::from_str(rate).unwrap(),
+        unused1: 0,
+        unused2: 0,
+        forward_from_channel: 255,
+        reverse_input: 0, // Depracted, Input reversing is not required since it can be done on mixer level
+    };
+
+    inav.set_servo_config(u8::from_str(index).unwrap(), servo).await?;
     Ok(value)
 }
 
