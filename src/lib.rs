@@ -117,6 +117,9 @@ pub struct INavMsp {
     servo_mix_rules: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
     set_servo_mix_rules_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
+    servo_configs: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    set_servo_configs_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+
     rx_map: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
     set_rx_map_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
@@ -156,6 +159,9 @@ impl INavMsp {
 
             servo_mix_rules: channel::<Result<Vec<u8>, ()>>(100),
             set_servo_mix_rules_ack: channel::<Result<Vec<u8>, ()>>(100),
+
+            servo_configs: channel::<Result<Vec<u8>, ()>>(100),
+            set_servo_configs_ack: channel::<Result<Vec<u8>, ()>>(100),
 
             rx_map: channel::<Result<Vec<u8>, ()>>(100),
             set_rx_map_ack: channel::<Result<Vec<u8>, ()>>(100),
@@ -197,6 +203,9 @@ impl INavMsp {
             self.servo_mix_rules.0.clone(),
             self.set_servo_mix_rules_ack.0.clone(),
 
+            self.servo_configs.0.clone(),
+            self.set_servo_configs_ack.0.clone(),
+
             self.rx_map.0.clone(),
             self.set_rx_map_ack.0.clone(),
 
@@ -231,6 +240,9 @@ impl INavMsp {
 
         servo_mix_rules_send: Sender<Result<Vec<u8>, ()>>,
         set_servo_mix_rules_ack_send: Sender<Result<Vec<u8>, ()>>,
+
+        servo_configs_send: Sender<Result<Vec<u8>, ()>>,
+        set_servo_configs_ack_send: Sender<Result<Vec<u8>, ()>>,
 
         rx_map_send: Sender<Result<Vec<u8>, ()>>,
         set_rx_map_ack_send: Sender<Result<Vec<u8>, ()>>,
@@ -280,6 +292,9 @@ impl INavMsp {
 
                     Some(MspCommandCode::MSP_SERVO_MIX_RULES) => &servo_mix_rules_send,
                     Some(MspCommandCode::MSP_SET_SERVO_MIX_RULE) => &set_servo_mix_rules_ack_send,
+
+                    Some(MspCommandCode::MSP_SERVO_CONFIGURATIONS) => &servo_configs_send,
+                    Some(MspCommandCode::MSP_SET_SERVO_CONFIGURATION) => &set_servo_configs_ack_send,
 
                     Some(MspCommandCode::MSP_RX_MAP) => &rx_map_send,
                     Some(MspCommandCode::MSP_SET_RX_MAP) => &set_rx_map_ack_send,
@@ -796,6 +811,52 @@ impl INavMsp {
 
         return Ok(rules);
 	  }
+
+    pub async fn set_servo_config(&self, index: u8, servo_config: MspServoConfig) -> Result<(), &str> {
+        let payload = MspSetServoConfig {
+            index: index,
+            servo_config: servo_config,
+        };
+
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_SET_SERVO_CONFIGURATION as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: payload.pack().to_vec(),
+        };
+
+        self.core.write(packet).await;
+
+        return match self.set_servo_configs_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to set servo config")
+        };
+	  }
+
+    /// println!("servo mixers {:?}", inav.get_servo_mix_rules().await);
+    pub async fn get_servo_configs(&self) -> Result<Vec<MspServoConfig>, &str> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_SERVO_CONFIGURATIONS as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.core.write(packet).await;
+
+        let payload = match self.servo_configs.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get servo configs")
+        };
+
+        let mut servo_configs = vec![];
+        let len = MspServoConfig::packed_bytes();
+
+        for i in (0..payload.len()).step_by(len) {
+            let servo_config = MspServoConfig::unpack_from_slice(&payload[i..i+len]).unwrap();
+            servo_configs.push(servo_config);
+        }
+
+        return Ok(servo_configs);
+    }
 
     /// inav.set_rx_map_rules(multiwii_serial_protocol::structs::MspRxMap { map: [0,0,0,0]}).await;
     /// println!("features {:?}", inav.get_rx_map_rules().await);
