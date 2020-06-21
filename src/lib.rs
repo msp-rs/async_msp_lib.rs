@@ -107,6 +107,9 @@ pub struct INavMsp {
 
     osd_configs: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
     set_osd_config_ack: (Sender<Result<Vec<u8>, ()>>,Receiver<Result<Vec<u8>, ()>>),
+    osd_layout_count: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    osd_layout_items: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    set_osd_layout_item_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
     serial_settings: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
     set_serial_settings_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
@@ -150,6 +153,9 @@ impl INavMsp {
 
             osd_configs: channel::<Result<Vec<u8>, ()>>(100),
             set_osd_config_ack: channel::<Result<Vec<u8>, ()>>(100),
+            osd_layout_count: channel::<Result<Vec<u8>, ()>>(100),
+            osd_layout_items: channel::<Result<Vec<u8>, ()>>(100),
+            set_osd_layout_item_ack: channel::<Result<Vec<u8>, ()>>(100),
 
             serial_settings: channel::<Result<Vec<u8>, ()>>(100),
             set_serial_settings_ack: channel::<Result<Vec<u8>, ()>>(100),
@@ -193,6 +199,9 @@ impl INavMsp {
 
             self.osd_configs.0.clone(),
             self.set_osd_config_ack.0.clone(),
+            self.osd_layout_count.0.clone(),
+            self.osd_layout_items.0.clone(),
+            self.set_osd_layout_item_ack.0.clone(),
 
             self.serial_settings.0.clone(),
             self.set_serial_settings_ack.0.clone(),
@@ -231,6 +240,9 @@ impl INavMsp {
 
         osd_configs_send: Sender<Result<Vec<u8>, ()>>,
         set_osd_config_ack_send: Sender<Result<Vec<u8>, ()>>,
+        osd_layout_count_send: Sender<Result<Vec<u8>, ()>>,
+        osd_layout_items_send: Sender<Result<Vec<u8>, ()>>,
+        set_osd_layout_item_send_ack: Sender<Result<Vec<u8>, ()>>,
 
         serial_settings_send: Sender<Result<Vec<u8>, ()>>,
         set_serial_settings_ack_send: Sender<Result<Vec<u8>, ()>>,
@@ -267,6 +279,7 @@ impl INavMsp {
                 // println!("{:?}", packet);
 
                 let cmd = MspCommandCode::from_primitive(packet.cmd);
+                let packet_length = packet.data.len();
 
                 let result = match packet.direction {
                     MspPacketDirection::FromFlightController => Ok(packet.data),
@@ -283,6 +296,10 @@ impl INavMsp {
 
                     Some(MspCommandCode::MSP_OSD_CONFIG) => &osd_configs_send,
                     Some(MspCommandCode::MSP_SET_OSD_CONFIG) => &set_osd_config_ack_send,
+                    // if payload size in osd_layout_items is bigger then 2 bytes its means we got the count
+                    // else we got list of items in the layout
+                    Some(MspCommandCode::MSP2_INAV_OSD_LAYOUTS) => if packet_length > 2 { &osd_layout_items_send } else { &osd_layout_count_send },
+                    Some(MspCommandCode::MSP2_INAV_OSD_SET_LAYOUT_ITEM) => &set_osd_layout_item_send_ack,
 
                     Some(MspCommandCode::MSP2_SERIAL_CONFIG) => &serial_settings_send,
                     Some(MspCommandCode::MSP2_SET_SERIAL_CONFIG) => &set_serial_settings_ack_send,
@@ -603,7 +620,7 @@ impl INavMsp {
     }
 
     pub async fn set_osd_config(&self, config: MspOsdConfig) -> Result<(), &str> {
-        // if -1 will set different kinds of configurations else the laytout id
+        // if -1 will set different kinds of configurations else the layout id
         // but when fetching it always returns everything with correct osd_support
         // so it seems to set everything we need to call it twice, once with -1 and then with the real value
         let payload = MspSetGetOsdConfig {
@@ -653,6 +670,83 @@ impl INavMsp {
             config: osd_set_get_reply.config,
             item_positions: item_positions,
         });
+    }
+
+    pub async fn set_osd_layout_item(&self, id: u8, item: MspSetOsdLayout) -> Result<(), &str> {
+        let payload = MspSetOsdLayoutItem {
+            layout_index: id,
+            item: item,
+        };
+
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_INAV_OSD_SET_LAYOUT_ITEM as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: payload.pack().to_vec(),
+        };
+
+        self.core.write(packet).await;
+
+        return match self.set_osd_layout_item_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to set osd layout item")
+        };
+    }
+
+    pub async fn get_osd_layout_count(&self) -> Result<MspOsdLayouts, &str> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_INAV_OSD_LAYOUTS as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.core.write(packet).await;
+
+        let payload = match self.osd_layout_count.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get layout count")
+        };
+
+        let header_len = MspOsdLayouts::packed_bytes();
+        let osd_layout_config = MspOsdLayouts::unpack_from_slice(&payload[..header_len]).unwrap();
+
+        return Ok(osd_layout_config);
+    }
+
+    pub async fn get_osd_layout_items(&self, layout_index: u8) -> Result<Vec<MspOsdItemPosition>, &str> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_INAV_OSD_LAYOUTS as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![layout_index],
+        };
+
+        self.core.write(packet).await;
+
+        let payload = match self.osd_layout_items.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get layout items")
+        };
+
+        let mut item_positions = vec![];
+        let len = MspOsdItemPosition::packed_bytes();
+        for i in (0..payload.len()).step_by(len) {
+            let item_pos = MspOsdItemPosition::unpack_from_slice(&payload[i..i+len]).unwrap();
+            item_positions.push(item_pos);
+        }
+
+        return Ok(item_positions);
+    }
+
+    pub async fn get_osd_layouts(&self) -> Result<Vec<Vec<MspOsdItemPosition>>, &str> {
+        let mut layouts = vec![];
+
+        let layout_count = self.get_osd_layout_count().await?;
+
+        for layout_i in 0..layout_count.layout_count {
+            let items = self.get_osd_layout_items(layout_i).await?;
+            layouts.push(items);
+        }
+
+        return Ok(layouts);
     }
 
     /// let shitty_serials = vec![multiwii_serial_protocol::structs::MspSerialSetting {
