@@ -145,6 +145,22 @@ async fn main() {
                 )
         )
         .subcommand(
+            App::new("osd_layout")
+                .about("Get all osd setting")
+                .subcommand(
+                    App::new("set")
+                        .about("Set osd setting")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(
+                            Arg::with_name("strict")
+                                .long("strict")
+                                .help("stop if setting not found in fc")
+                                .required(false)
+                        )
+                )
+        )
+        .subcommand(
             App::new("feature")
                 .about("Get all features")
                 .subcommand(
@@ -433,6 +449,26 @@ async fn main() {
                 _ => unreachable!(),
             }
         }
+        ("osd_layout", Some(osd_layout_matches)) => {
+            match osd_layout_matches.subcommand() {
+                ("set", Some(set_matches)) => {
+                    if !set_matches.is_present("value") {
+                        unreachable!();
+                    }
+
+                    let is_strict = set_matches.is_present("strict");
+
+                    let value = set_matches.value_of("value").unwrap();
+                    upload_osd_layout_items(&inav, vec![value.to_string()], is_strict).await.unwrap();
+                },
+                ("", None) => {
+                    for d in dump_osd_layouts(&inav).await.unwrap() {
+                        println!("{}", d);
+                    }
+                },
+                _ => unreachable!(),
+            }
+        }
         ("feature", Some(serial_matches)) => {
             match serial_matches.subcommand() {
                 ("set", Some(set_matches)) => {
@@ -709,25 +745,16 @@ async fn main() {
                         None => (),
                     };
 
-                    match lookup.get("osd_item") {
+                    match lookup.get("osd_layout") {
                         Some(values) => {
-                            let mut futures = values
-                                .iter()
-                                .map(|v| upload_osd_item(&inav, v))
-                                .collect::<FuturesUnordered<_>>();
-
-                            loop {
-                                match futures.next().await {
-                                    Some(Ok(result)) => println!("osd_item {}", result),
-                                    Some(Err(e)) => {
-                                        eprintln!("failed to set some osd_item {}", e);
-                                        if is_strict {
-                                            return;
-                                        }
-                                    },
-                                    None => break,
-                                }
-                            }
+                            match upload_osd_layout_items(&inav, values.to_vec(), is_strict).await {
+                                Ok(_) => (),
+                                Err(_) => {
+                                    if is_strict {
+                                        return;
+                                    }
+                                },
+                            };
                         },
                         None => (),
                     };
@@ -778,8 +805,8 @@ async fn main() {
 
                     println!("map {}", dump_map(&inav).await.unwrap());
 
-                    for d in dump_osd_items(&inav).await.unwrap() {
-                        println!("osd_item {}", d);
+                    for d in dump_osd_layouts(&inav).await.unwrap() {
+                        println!("osd_layout {}", d);
                     }
 
                     for d in dump_feature(&inav).await.unwrap() {
@@ -1087,6 +1114,108 @@ async fn dump_osd_items(inav: &INavMsp) -> Result<Vec<String>, &str> {
                 if field & 0x0800 > 0 { "V" } else { "H" },
             )
         }).collect();
+
+    return Ok(dump);
+}
+
+async fn upload_osd_layout_items<'a, 'b>(inav: &'a INavMsp, values: Vec<String>, strict: bool) -> Result<(), &'a str> {
+    let layout_count = inav.get_osd_layout_count().await?;
+    let items: Vec<(String, MspSetOsdLayoutItem)> = values.iter().map(|value| {
+        let mut split_iter = value.split_whitespace();
+
+        let layout_index = u8::from_str(split_iter.next().unwrap()).unwrap();
+        let item_pos = u8::from_str(split_iter.next().unwrap()).unwrap();
+        let col = u8::from_str(split_iter.next().unwrap()).unwrap();
+        let row = u8::from_str(split_iter.next().unwrap()).unwrap();
+        let vis = split_iter.next().unwrap(); // v h
+        let is_visible: u16 = match vis {
+            "V" => 0x0800,
+            "H" => 0,
+            _ => 0
+        };
+
+        let field: u16 = ((col as u16) | ((row as u16) << 5)) | is_visible;
+        let bytes = field.to_le_bytes();
+
+        (value.to_string(), MspSetOsdLayoutItem {
+            layout_index: layout_index,
+            item: MspSetOsdLayout {
+                item_index: item_pos,
+                item: MspOsdItemPosition {
+                    col: bytes[0],
+                    row: bytes[1],
+                },
+            },
+        })
+    }).collect();
+
+    let items_res = items.iter().try_fold(vec![], |mut acc, (val, item)| {
+        if &item.layout_index < &layout_count.layout_count && &item.item.item_index < &layout_count.item_count {
+            acc.push((val, item));
+        } else {
+            eprintln!("unsupported osd_layout {} {}", &item.layout_index, &item.item.item_index);
+
+            if strict {
+                return None;
+            }
+        }
+
+        return Some(acc)
+    });
+
+    let valid_items = match items_res {
+        Some(buf) => buf,
+        None => return Err("aborting due to unsupported settings")
+    };
+
+    let mut futures = valid_items
+        .iter()
+        .map(|(val, item)| _set_osd_layout_item(inav, val, item))
+        .collect::<FuturesUnordered<_>>();
+
+    loop {
+        match futures.next().await {
+            Some(Ok(_)) => (),
+            Some(Err(e)) => {
+                eprintln!("failed to set some osd_layout {}", e);
+                if strict {
+                    return Err("failed to set some item");
+                }
+            },
+            None => break,
+        }
+    }
+
+    Ok(())
+}
+
+async fn _set_osd_layout_item<'a>(inav: &'a INavMsp, val: &String, item: &MspSetOsdLayoutItem) -> Result<(), &'a str> {
+    inav.set_osd_layout_item(item.layout_index, item.item).await?;
+    println!("osd_layout {}", val);
+    Ok(())
+}
+
+// iNav only command
+async fn dump_osd_layouts(inav: &INavMsp) -> Result<Vec<String>, &str> {
+    let mut dump = vec![];
+
+    let layouts = inav.get_osd_layouts().await?;
+
+    for (layout_i, items) in layouts.iter().enumerate() {
+        for (i, item) in items.iter().enumerate() {
+            let field = u16::from_le_bytes([item.col, item.row]);
+            let dump_item = format!(
+                "{} {} {} {} {}",
+                layout_i,
+                i,
+                field & 0x001F, // OSD_X
+                (field >> 5) & 0x001F, // OSD_Y
+                if field & 0x0800 > 0 { "V" } else { "H" },
+            );
+
+            dump.push(dump_item);
+        }
+    }
 
     return Ok(dump);
 }
