@@ -19,11 +19,11 @@ use std::time::Duration;
 use std::iter::Iterator;
 use std::convert::TryFrom;
 use std::str::FromStr;
+use std::convert::From;
 use futures::future::try_join_all;
 use futures::stream::FuturesUnordered;
 use clap_v3::{App, AppSettings, Arg};
 use multiwii_serial_protocol_v2::structs::*;
-use std::convert::TryInto;
 use std::collections::HashMap;
 use packed_struct::PrimitiveEnum;
 use async_msp_lib::{INavMsp, SettingInfo};
@@ -281,7 +281,7 @@ async fn main() {
 
                     let name = get_matches.value_of("name").unwrap();
                     let setting_info = inav.get_setting_info_by_name(&name).await.unwrap();
-                    println!("{}", setting_to_str(&setting_info));
+                    println!("{}", String::from(&setting_info));
                 }
                 ("set", Some(set_matches)) => {
                     if !set_matches.is_present("name") || !set_matches.is_present("value") {
@@ -291,7 +291,7 @@ async fn main() {
                     let name = set_matches.value_of("name").unwrap();
                     let value = set_matches.value_of("value").unwrap();
                     let setting_info = inav.get_setting_info_by_name(&name).await.unwrap();
-                    let payload = setting_to_vec(&setting_info, value).unwrap();
+                    let payload = setting_info.setting_to_vec(value).unwrap();
                     inav.set_setting_by_name(name, &payload).await.unwrap();
                 },
                 ("set-all", Some(set_all_matches)) => {
@@ -1302,7 +1302,7 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
             }
         };
 
-        let buf_val = match setting_to_vec(&s, &val) {
+        let buf_val = match s.setting_to_vec(&val) {
             Ok(buf_val) => buf_val,
             Err(e) => {
                 eprintln!("unsupported setting value {} {}", &name, e);
@@ -1339,72 +1339,8 @@ async fn dump_common_setting(inav: &INavMsp) -> Result<Vec<String>, &str> {
     let settings = describe_settings(inav).await?;
     let dump: Vec<String> = settings
         .iter()
-        .map(|s| format!("{} = {}", &s.name, setting_to_str(&s)))
+        .map(|s| format!("{} = {}", &s.name, String::from(s)))
         .collect();
 
     return Ok(dump);
-}
-
-fn setting_to_str(s: &SettingInfo) -> String {
-    return match s.info.setting_type {
-        SettingType::VarUint8 => {
-            let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<u8>());
-            let val = u8::from_le_bytes(int_bytes.try_into().unwrap());
-            if s.info.setting_mode == SettingMode::ModeLookup {
-                return s.enum_names[val as usize].to_string();
-            }
-            return val.to_string();
-        },
-        SettingType::VarInt8 => {
-            let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<i8>());
-            return i8::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
-        }
-        SettingType::VarUint16 => {
-            let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<u16>());
-            return u16::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
-        }
-        SettingType::VarInt16 => {
-            let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<i16>());
-            return i16::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
-        }
-        SettingType::VarUint32 => {
-            let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<u32>());
-            return u32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
-        }
-        SettingType::VarFloat => {
-            let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<f32>());
-            return f32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
-        }
-        SettingType::VarString => INavMsp::str_from_u8_nul_utf8(&s.value).unwrap().to_owned(),
-    };
-}
-
-fn setting_to_vec<'a>(s: &SettingInfo, value: &str) -> Result<Vec<u8>, &'a str> {
-    return match s.info.setting_type {
-        SettingType::VarUint8 => {
-            if s.info.setting_mode == SettingMode::ModeLookup {
-                let enum_name = String::from(value).to_uppercase();
-                let index = s.enum_names.iter().position(|r| r == &enum_name);
-                return match index {
-                    Some(i) => Ok((i as u8).to_le_bytes().to_vec()),
-                    None => {
-                        eprintln!("Failed to find {} in {}", enum_name, s.enum_names.join(","));
-                        return Err("Failed to find table value");
-                    }
-                }
-            }
-
-
-            return match value.parse::<u8>() {
-                Ok(val) => Ok(val.to_le_bytes().to_vec()),
-                _ => Err("Failed to parse"),
-            };
-        },
-        SettingType::VarInt8 => Ok(value.parse::<i8>().unwrap().to_le_bytes().to_vec()),
-        SettingType::VarUint16 => Ok(value.parse::<u16>().unwrap().to_le_bytes().to_vec()),
-        SettingType::VarInt16 => Ok(value.parse::<i16>().unwrap().to_le_bytes().to_vec()),
-        SettingType::VarUint32 => Ok(value.parse::<u32>().unwrap().to_le_bytes().to_vec()),
-        SettingType::VarFloat => Ok(value.parse::<f32>().unwrap().to_le_bytes().to_vec()),
-        SettingType::VarString => Ok(value.as_bytes().to_vec()),
-    };
 }
