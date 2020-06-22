@@ -415,18 +415,18 @@ async fn main() {
                 _ => unreachable!(),
             }
         }
-        ("osd_layout", Some(serial_matches)) => {
-            match serial_matches.subcommand() {
+        ("osd_item", Some(osd_item_matches)) => {
+            match osd_item_matches.subcommand() {
                 ("set", Some(set_matches)) => {
                     if !set_matches.is_present("value") {
                         unreachable!();
                     }
 
                     let value = set_matches.value_of("value").unwrap();
-                    upload_osd_layout(&inav, value).await.unwrap();
+                    upload_osd_item(&inav, value).await.unwrap();
                 },
                 ("", None) => {
-                    for d in dump_osd_layout(&inav).await.unwrap() {
+                    for d in dump_osd_items(&inav).await.unwrap() {
                         println!("{}", d);
                     }
                 },
@@ -709,18 +709,18 @@ async fn main() {
                         None => (),
                     };
 
-                    match lookup.get("osd_layout") {
+                    match lookup.get("osd_item") {
                         Some(values) => {
                             let mut futures = values
                                 .iter()
-                                .map(|v| upload_osd_layout(&inav, v))
+                                .map(|v| upload_osd_item(&inav, v))
                                 .collect::<FuturesUnordered<_>>();
 
                             loop {
                                 match futures.next().await {
-                                    Some(Ok(result)) => println!("osd_layout {}", result),
+                                    Some(Ok(result)) => println!("osd_item {}", result),
                                     Some(Err(e)) => {
-                                        eprintln!("failed to set some osd_layout {}", e);
+                                        eprintln!("failed to set some osd_item {}", e);
                                         if is_strict {
                                             return;
                                         }
@@ -778,8 +778,8 @@ async fn main() {
 
                     println!("map {}", dump_map(&inav).await.unwrap());
 
-                    for d in dump_osd_layout(&inav).await.unwrap() {
-                        println!("osd_layout {}", d);
+                    for d in dump_osd_items(&inav).await.unwrap() {
+                        println!("osd_item {}", d);
                     }
 
                     for d in dump_feature(&inav).await.unwrap() {
@@ -1046,10 +1046,9 @@ async fn dump_serial(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_osd_layout<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+async fn upload_osd_item<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
     let mut split_iter = value.split_whitespace();
 
-    let _layout_index = split_iter.next().unwrap();
     let item_pos = u8::from_str(split_iter.next().unwrap()).unwrap();
     let col = u8::from_str(split_iter.next().unwrap()).unwrap();
     let row = u8::from_str(split_iter.next().unwrap()).unwrap();
@@ -1072,7 +1071,7 @@ async fn upload_osd_layout<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<
     Ok(value)
 }
 
-async fn dump_osd_layout(inav: &INavMsp) -> Result<Vec<String>, &str> {
+async fn dump_osd_items(inav: &INavMsp) -> Result<Vec<String>, &str> {
     let osd = inav.get_osd_settings().await?;
     let dump: Vec<String> = osd.item_positions
         .iter()
@@ -1080,9 +1079,8 @@ async fn dump_osd_layout(inav: &INavMsp) -> Result<Vec<String>, &str> {
         .map(|(i, item)| {
             let field = u16::from_le_bytes([item.col, item.row]);
 
-            // TODO: we set support only single layout
             format!(
-                "0 {} {} {} {}",
+                "{} {} {} {}",
                 i,
                 field & 0x001F, // OSD_X
                 (field >> 5) & 0x001F, // OSD_Y
