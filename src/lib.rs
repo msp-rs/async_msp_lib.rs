@@ -176,7 +176,7 @@ impl INavMsp {
 
             write_eeprom_ack: channel::<Result<Vec<u8>, ()>>(1),
         };
-	  }
+    }
 
     // TODO: If serial-port rs supports standard read write interface we should use this instead of seril explocitly
     pub fn start(&self, serial: Box<dyn SerialPort>) {
@@ -333,7 +333,7 @@ impl INavMsp {
             next_address: 0u32,
             received_address: 0u32,
         };
-	  }
+    }
 
     pub fn parse_chunk(payload: Vec<u8>) -> MspDataFlashReplyWithData {
         // extract the read address from the packet
@@ -432,7 +432,7 @@ impl INavMsp {
                 }
             }
         }
-	  }
+    }
 
     pub async fn flash_summary(&self) -> Result<MspDataFlashSummaryReply, &str> {
         let packet = MspPacket {
@@ -451,7 +451,7 @@ impl INavMsp {
         let summary = MspDataFlashSummaryReply::unpack_from_slice(&payload).unwrap();
 
         return Ok(summary);
-	  }
+    }
 
 
     /// aux 2 44 6 1300 1400
@@ -491,7 +491,7 @@ impl INavMsp {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set mode range")
         };
-	  }
+    }
 
     pub async fn get_mode_ranges(&self) -> Result<Vec<MspModeRange>, &str> {
         let packet = MspPacket {
@@ -518,7 +518,7 @@ impl INavMsp {
         }
 
         return Ok(ranges);
-	  }
+    }
 
     /// inav.set_motor_mixer(inav_msp_lib::MotorMixer {
     ///     index: 0,
@@ -551,7 +551,7 @@ impl INavMsp {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set motor mixer")
         };
-	  }
+    }
 
     pub async fn get_motor_mixers(&self) -> Result<Vec<MspMotorMixer>, &str> {
         let packet = MspPacket {
@@ -578,7 +578,7 @@ impl INavMsp {
         }
 
         return Ok(mmixers);
-	  }
+    }
 
     /// inav.set_osd_config_item(116, multiwii_serial_protocol::structs::MspOsdItemPosition { col: 11u8, row: 22u8 }).await;
     /// println!("osd {:?}", inav.get_osd_settings().await);
@@ -622,7 +622,7 @@ impl INavMsp {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set osd config")
         };
-	  }
+    }
 
     pub async fn get_osd_settings(&self) -> Result<MspOsdSettings, &str> {
         let packet = MspPacket {
@@ -653,7 +653,7 @@ impl INavMsp {
             config: osd_set_get_reply.config,
             item_positions: item_positions,
         });
-	  }
+    }
 
     /// let shitty_serials = vec![multiwii_serial_protocol::structs::MspSerialSetting {
     ///     index: 6,
@@ -679,7 +679,7 @@ impl INavMsp {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set serial settings")
         };
-	  }
+    }
 
     pub async fn get_serial_settings(&self) -> Result<Vec<MspSerialSetting>, &str> {
         let packet = MspPacket {
@@ -706,7 +706,7 @@ impl INavMsp {
         }
 
         return Ok(serials);
-	  }
+    }
 
     /// let shitty_features = multiwii_serial_protocol::structs::MspFeatures {
     ///     features: [
@@ -737,7 +737,7 @@ impl INavMsp {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set features")
         };
-	  }
+    }
 
     pub async fn get_features(&self) -> Result<MspFeatures, &str> {
         let packet = MspPacket {
@@ -762,7 +762,7 @@ impl INavMsp {
         feat.features[24..32].reverse();
 
         return Ok(feat);
-	  }
+    }
 
     pub async fn set_servo_mix_rule(&self, index: u8, servo_rule: MspServoMixRule) -> Result<(), &str> {
         let payload = MspSetServoMixRule {
@@ -782,7 +782,7 @@ impl INavMsp {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set servo mix rule")
         };
-	  }
+    }
 
     /// println!("servo mixers {:?}", inav.get_servo_mix_rules().await);
     pub async fn get_servo_mix_rules(&self) -> Result<Vec<MspServoMixRule>, &str> {
@@ -810,7 +810,7 @@ impl INavMsp {
         }
 
         return Ok(rules);
-	  }
+    }
 
     pub async fn set_servo_config(&self, index: u8, servo_config: MspServoConfig) -> Result<(), &str> {
         let payload = MspSetServoConfig {
@@ -830,7 +830,7 @@ impl INavMsp {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set servo config")
         };
-	  }
+    }
 
     /// println!("servo mixers {:?}", inav.get_servo_mix_rules().await);
     pub async fn get_servo_configs(&self) -> Result<Vec<MspServoConfig>, &str> {
@@ -873,7 +873,7 @@ impl INavMsp {
             Ok(_) => Ok(()),
             Err(_) => Err("failed set rx map rules")
         };
-	  }
+    }
 
     pub async fn get_rx_map(&self) -> Result<MspRxMap, &str> {
         let packet = MspPacket {
@@ -890,7 +890,7 @@ impl INavMsp {
         };
 
         return Ok(MspRxMap::unpack_from_slice(&payload).unwrap());
-	  }
+    }
 
 
     // TODO: on connection get version from msp, similar to inav configurator and allow to switch features based on this version
@@ -937,7 +937,7 @@ impl INavMsp {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set setting")
         };
-	  }
+    }
 
     pub async fn get_setting_info_by_name(&self, name: &str) -> Result<SettingInfo, &str> {
         let mut payload = name.as_bytes().to_vec();
@@ -999,7 +999,7 @@ impl INavMsp {
             info: setting_info,
             enum_names: enum_values.iter().map(|&s| String::from(s)).collect(),
         });
-	  }
+    }
 
     // calling pg list will get all the settings groups list (the PG groups)
     // it will return the start of the group and the end of the group
@@ -1030,7 +1030,7 @@ impl INavMsp {
         }
 
         return Ok(setting_ids);
-	  }
+    }
 
     pub async fn save_to_eeprom(&self) -> Result<(), &str> {
         let packet = MspPacket {
@@ -1045,7 +1045,7 @@ impl INavMsp {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to write to eeprom")
         };
-	  }
+    }
 
 
     pub async fn reboot(&self) -> Result<(), &str> {
@@ -1057,5 +1057,5 @@ impl INavMsp {
 
         self.core.write(packet).await;
         Ok(())
-	  }
+    }
 }
