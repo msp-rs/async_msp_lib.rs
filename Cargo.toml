@@ -1,6 +1,6 @@
 [package]
 name = "async_msp_lib"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["Ilya Guterman <amfernusus@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -13,7 +13,7 @@ keywords = ["msp", "multiwii", "inav", "betaflight"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-multiwii_serial_protocol_v2 = "0.1.6"
+multiwii_serial_protocol_v2 = "0.1.7"
 serialport = "3.3.0"
 packed_struct = "0.3"
 packed_struct_codegen = "0.3"
