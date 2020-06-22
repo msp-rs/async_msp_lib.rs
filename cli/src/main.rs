@@ -152,12 +152,6 @@ async fn main() {
                         .about("Set osd setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
-                        .arg(
-                            Arg::with_name("strict")
-                                .long("strict")
-                                .help("stop if setting not found in fc")
-                                .required(false)
-                        )
                 )
         )
         .subcommand(
@@ -206,12 +200,6 @@ async fn main() {
                         .about("Upload all configs")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("input").help("settings file path").required(true).takes_value(true))
-                        .arg(
-                            Arg::with_name("strict")
-                                .long("strict")
-                                .help("stop if setting not found in fc")
-                                .required(false)
-                        )
                 )
         )
         .subcommand(
@@ -238,6 +226,12 @@ async fn main() {
                 .short('r')
                 .long("reboot")
                 .help("reboot fc")
+                .required(false)
+        )
+        .arg(
+            Arg::with_name("strict")
+                .long("strict")
+                .help("stop if setting not found in fc")
                 .required(false)
         )
         .get_matches();
@@ -456,7 +450,7 @@ async fn main() {
                         unreachable!();
                     }
 
-                    let is_strict = set_matches.is_present("strict");
+                    let is_strict = matches.is_present("strict");
 
                     let value = set_matches.value_of("value").unwrap();
                     upload_osd_layout_items(&inav, vec![value.to_string()], is_strict).await.unwrap();
@@ -565,7 +559,7 @@ async fn main() {
                         print!("missing input");
                     }
 
-                    let is_strict = upload_matches.is_present("strict");
+                    let is_strict = matches.is_present("strict");
 
                     let input = upload_matches.value_of("input").unwrap();
                     let f = OpenOptions::new()
