@@ -585,9 +585,9 @@ dependencies = [
 
 [[package]]
 name = "multiwii_serial_protocol_v2"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "323105332d68334b84a9dcbf68a62238e4677dd1bc667acce564cb39b40cb0a6"
+checksum = "3695cef62ef6ca014b4fc5bcbf8cc5ea8fde2027edd3089cfda39c2022a39100"
 dependencies = [
  "crc-any",
  "packed_struct",
