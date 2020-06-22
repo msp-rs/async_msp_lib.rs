@@ -12,6 +12,7 @@ use async_std::sync::{channel, Sender, Receiver};
 use async_std::{io, task};
 use async_std::future;
 use std::time::Duration;
+use std::convert::TryInto;
 
 mod core;
 
@@ -36,6 +37,74 @@ pub struct SettingInfo {
     pub name: String,
     pub value: Vec<u8>,
     pub enum_names: Vec<String>,
+}
+
+impl SettingInfo {
+    pub fn setting_to_vec(&self, value: &str) -> Result<Vec<u8>, &str> {
+        return match self.info.setting_type {
+            SettingType::VarUint8 => {
+                if self.info.setting_mode == SettingMode::ModeLookup {
+                    let enum_name = String::from(value).to_uppercase();
+                    let index = self.enum_names.iter().position(|r| r == &enum_name);
+                    return match index {
+                        Some(i) => Ok((i as u8).to_le_bytes().to_vec()),
+                        None => {
+                            eprintln!("Failed to find {} in {}", enum_name, self.enum_names.join(","));
+                            return Err("Failed to find table value");
+                        }
+                    }
+                }
+
+
+                return match value.parse::<u8>() {
+                    Ok(val) => Ok(val.to_le_bytes().to_vec()),
+                    _ => Err("Failed to parse"),
+                };
+            },
+            SettingType::VarInt8 => Ok(value.parse::<i8>().unwrap().to_le_bytes().to_vec()),
+            SettingType::VarUint16 => Ok(value.parse::<u16>().unwrap().to_le_bytes().to_vec()),
+            SettingType::VarInt16 => Ok(value.parse::<i16>().unwrap().to_le_bytes().to_vec()),
+            SettingType::VarUint32 => Ok(value.parse::<u32>().unwrap().to_le_bytes().to_vec()),
+            SettingType::VarFloat => Ok(value.parse::<f32>().unwrap().to_le_bytes().to_vec()),
+            SettingType::VarString => Ok(value.as_bytes().to_vec()),
+        };
+    }
+}
+
+impl From<&SettingInfo> for String {
+    fn from(s: &SettingInfo) -> Self {
+        match s.info.setting_type {
+            SettingType::VarUint8 => {
+                let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<u8>());
+                let val = u8::from_le_bytes(int_bytes.try_into().unwrap());
+                if s.info.setting_mode == SettingMode::ModeLookup {
+                    return s.enum_names[val as usize].to_string();
+                }
+                return val.to_string();
+            },
+            SettingType::VarInt8 => {
+                let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<i8>());
+                return i8::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
+            }
+            SettingType::VarUint16 => {
+                let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<u16>());
+                return u16::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
+            }
+            SettingType::VarInt16 => {
+                let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<i16>());
+                return i16::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
+            }
+            SettingType::VarUint32 => {
+                let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<u32>());
+                return u32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
+            }
+            SettingType::VarFloat => {
+                let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<f32>());
+                return f32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
+            }
+            SettingType::VarString => INavMsp::str_from_u8_nul_utf8(&s.value).unwrap().to_owned(),
+        }
+    }
 }
 
 // TODO: we should return interface that implements async_std::io::Read trait
