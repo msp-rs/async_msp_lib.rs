@@ -18,8 +18,11 @@ feature                         Get all features
                   disable       Disable feature
                   enable        Enable feature
 
-osd_item                        Get all osd setting
-                  set           Set osd setting
+osd_item                        Get all osd items (derecated)
+                  set           Set osd item
+
+osd_layout                      Get all osd_layout items
+                  set           Set osd layout item
 
 blackbox          download      Download blackbox concurrently
                   downloadv2    Pull blackbox serially
@@ -53,8 +56,11 @@ OPTIONS:
     -p, --port <port>    device serial port
 
 FLAGS:
+    -h, --help       Prints help information
     -r, --reboot     reboot fc
     -s, --save       settings file path
+        --strict     stop if setting not found in fc
+    -V, --version    Prints version information
 ```
 
 ### Backup and restore FC configs

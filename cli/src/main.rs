@@ -136,20 +136,20 @@ async fn main() {
         )
         .subcommand(
             App::new("osd_item")
-                .about("Get all osd setting")
+                .about("Get all osd items (derecated)")
                 .subcommand(
                     App::new("set")
-                        .about("Set osd setting")
+                        .about("Set osd item")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
                 )
         )
         .subcommand(
             App::new("osd_layout")
-                .about("Get all osd setting")
+                .about("Get all osd_layout items")
                 .subcommand(
                     App::new("set")
-                        .about("Set osd setting")
+                        .about("Set osd layout item")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
                 )
