@@ -17,6 +17,7 @@ use async_std::prelude::*;
 
 use std::time::Duration;
 use std::iter::Iterator;
+use std::convert::TryFrom;
 use std::str::FromStr;
 use futures::future::try_join_all;
 use futures::stream::FuturesUnordered;
@@ -1039,12 +1040,12 @@ async fn upload_serial<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b 
     let peripheral_baudrate_index = split_iter.next().unwrap();
 
     let serial = MspSerialSetting {
-        identifier: u8_to_serial_identifier(u8::from_str(identifier).unwrap()).unwrap(),
+        identifier:  SerialIdentifier::try_from(u8::from_str(identifier).unwrap()).unwrap(),
         function_mask: u32::from_str(function_mask).unwrap(),
-        msp_baudrate_index: string_to_baudrate(msp_baudrate_index).unwrap(),
-        gps_baudrate_index: string_to_baudrate(gps_baudrate_index).unwrap(),
-        telemetry_baudrate_index: string_to_baudrate(telemetry_baudrate_index).unwrap(),
-        peripheral_baudrate_index: string_to_baudrate(peripheral_baudrate_index).unwrap(),
+        msp_baudrate_index: Baudrate::try_from(msp_baudrate_index).unwrap(),
+        gps_baudrate_index: Baudrate::try_from(gps_baudrate_index).unwrap(),
+        telemetry_baudrate_index: Baudrate::try_from(telemetry_baudrate_index).unwrap(),
+        peripheral_baudrate_index: Baudrate::try_from(peripheral_baudrate_index).unwrap(),
     };
 
     inav.set_serial_settings(vec![serial]).await?;
@@ -1058,10 +1059,10 @@ async fn dump_serial(inav: &INavMsp) -> Result<Vec<String>, &str> {
         .map(|s| format!("{} {} {} {} {} {}",
                          s.identifier as u8,
                          s.function_mask,
-                         baudrate_to_string(&s.msp_baudrate_index).unwrap(),
-                         baudrate_to_string(&s.gps_baudrate_index).unwrap(),
-                         baudrate_to_string(&s.telemetry_baudrate_index).unwrap(),
-                         baudrate_to_string(&s.peripheral_baudrate_index).unwrap())
+                         String::from(s.msp_baudrate_index),
+                         String::from(s.gps_baudrate_index),
+                         String::from(s.telemetry_baudrate_index),
+                         String::from(s.peripheral_baudrate_index))
         ).collect();
 
     return Ok(dump);
@@ -1406,75 +1407,4 @@ fn setting_to_vec<'a>(s: &SettingInfo, value: &str) -> Result<Vec<u8>, &'a str> 
         SettingType::VarFloat => Ok(value.parse::<f32>().unwrap().to_le_bytes().to_vec()),
         SettingType::VarString => Ok(value.as_bytes().to_vec()),
     };
-}
-
-// TODO: use trait from_string or implement strum
-// TODO: and move this to the library
-fn baudrate_to_string<'a>(baudrate: &Baudrate) -> Result<String, &'a str> {
-    let s = match baudrate {
-        Baudrate::BaudAuto => "0",
-        Baudrate::Baud1200 => "1200",
-        Baudrate::Baud2400 => "2400",
-        Baudrate::Baud4800 => "4800",
-        Baudrate::Baud9600 => "9600",
-        Baudrate::Baud19200 => "19200",
-        Baudrate::Baud38400 => "38400",
-        Baudrate::Baud57600 => "57600",
-        Baudrate::Baud115200 => "115200",
-        Baudrate::Baud230400 => "230400",
-        Baudrate::Baud250000 => "250000",
-        Baudrate::Baud460800 => "460800",
-        Baudrate::Baud921600 => "921600",
-        Baudrate::Baud1000000 => "1000000",
-        Baudrate::Baud1500000 => "1500000",
-        Baudrate::Baud2000000 => "2000000",
-        Baudrate::Baud2470000 => "2470000",
-    };
-
-    return Ok(s.to_owned());
-}
-
-fn string_to_baudrate<'a>(baudrate_str: &str) -> Result<Baudrate, &'a str> {
-    let baudrate = match baudrate_str {
-        "0" => Baudrate::BaudAuto,
-        "1200" => Baudrate::Baud1200,
-        "2400" => Baudrate::Baud2400,
-        "4800" => Baudrate::Baud4800,
-        "9600" => Baudrate::Baud9600,
-        "19200" => Baudrate::Baud19200,
-        "38400" => Baudrate::Baud38400,
-        "57600" => Baudrate::Baud57600,
-        "115200" => Baudrate::Baud115200,
-        "230400" => Baudrate::Baud230400,
-        "250000" => Baudrate::Baud250000,
-        "460800" => Baudrate::Baud460800,
-        "921600" => Baudrate::Baud921600,
-        "1000000" => Baudrate::Baud1000000,
-        "1500000" => Baudrate::Baud1500000,
-        "2000000" => Baudrate::Baud2000000,
-        "2470000" => Baudrate::Baud2470000,
-        _ => return Err("Baudrate not found"),
-    };
-
-    return Ok(baudrate);
-}
-
-fn u8_to_serial_identifier<'a>(id: u8) -> Result<SerialIdentifier, &'a str> {
-    let serial = match id {
-        255 => SerialIdentifier::None,
-        0 => SerialIdentifier::USART1,
-        1 => SerialIdentifier::USART2,
-        2 => SerialIdentifier::USART3,
-        3 => SerialIdentifier::USART4,
-        4 => SerialIdentifier::USART5,
-        5 => SerialIdentifier::USART6,
-        6 => SerialIdentifier::USART7,
-        7 => SerialIdentifier::USART8,
-        20 => SerialIdentifier::UsbVcp,
-        30 => SerialIdentifier::SoftSerial1,
-        31 => SerialIdentifier::SoftSerial2,
-        _ => return Err("Serial identifier not found"),
-    };
-
-    return Ok(serial);
 }
