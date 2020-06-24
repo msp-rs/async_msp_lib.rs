@@ -29,6 +29,8 @@ use packed_struct::PrimitiveEnum;
 use async_msp_lib::{INavMsp, SettingInfo};
 use itertools::Itertools;
 
+mod mcm;
+
 
 static FEATURE_NAMES: [&str; 32] = [
     "THR_VBAT_COMP", "VBAT", "TX_PROF_SEL", "BAT_PROF_AUTOSWITCH", "MOTOR_STOP",
@@ -201,6 +203,16 @@ async fn main() {
                         .about("Upload all configs")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("input").help("settings file path").required(true).takes_value(true))
+                )
+        )
+        .subcommand(
+            App::new("font")
+                .about("Upload mcm font file to MAX7456 osd")
+                .subcommand(
+                    App::new("set")
+                        .about("Upload all font")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("input").help(".mcm font file file path").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -807,6 +819,40 @@ async fn main() {
 
                     for d in dump_common_setting(&inav).await.unwrap() {
                         println!("set {}", d);
+                    }
+                },
+                _ => unreachable!(),
+            }
+        }
+        ("font", Some(font_matches)) => {
+            match font_matches.subcommand() {
+                ("set", Some(font_matches)) => {
+                    let input = font_matches.value_of("input").unwrap();
+                    let f = OpenOptions::new()
+                        .read(true)
+                        .open(input)
+                        .await.unwrap();
+                    let d = mcm::decoder::MCMDecoder::new(f);
+                    let char_pixels = d.decode().await.unwrap();
+
+                    let mut futures = char_pixels
+                        .iter()
+                        .enumerate()
+                        .map(|(addr, pixel_char)| inav.write_char(addr, pixel_char.pixels))
+                        .collect::<FuturesUnordered<_>>();
+
+
+                    loop {
+                        match futures.next().await {
+                            Some(Ok(result)) => println!("wrote char address {}", result),
+                            Some(Err(e)) => {
+                                eprintln!("failed to write some char {}", e);
+                                if is_strict {
+                                    return;
+                                }
+                            },
+                            None => break,
+                        }
                     }
                 },
                 _ => unreachable!(),

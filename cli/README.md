@@ -13,6 +13,8 @@ This is an incomplete implementation of the MSP2 commands, with some Cleanflight
 aux                             Get all aux setting
                   set           Set aux setting
 
+font              set           Upload mcm font file to MAX7456 osd
+
 feature                         Get all features
                   Set           features(FEATURE_NAME:enable, -FEATURE_NAME:disable)
                   disable       Disable feature
