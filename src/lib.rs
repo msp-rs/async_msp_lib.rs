@@ -199,8 +199,9 @@ pub struct INavMsp {
     setting_info: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
     set_setting_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
-    summary: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    write_char_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
+    summary: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
     chunk: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
     write_eeprom_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
@@ -245,8 +246,9 @@ impl INavMsp {
             setting_info: channel::<Result<Vec<u8>, ()>>(100),
             set_setting_ack: channel::<Result<Vec<u8>, ()>>(100),
 
-            summary: channel::<Result<Vec<u8>, ()>>(100),
+            write_char_ack: channel::<Result<Vec<u8>, ()>>(100),
 
+            summary: channel::<Result<Vec<u8>, ()>>(100),
             chunk: channel::<Result<Vec<u8>, ()>>(4096),
 
             write_eeprom_ack: channel::<Result<Vec<u8>, ()>>(1),
@@ -291,6 +293,8 @@ impl INavMsp {
             self.setting_info.0.clone(),
             self.set_setting_ack.0.clone(),
 
+            self.write_char_ack.0.clone(),
+
             self.summary.0.clone(),
             self.chunk.0.clone(),
 
@@ -332,8 +336,9 @@ impl INavMsp {
         setting_info: Sender<Result<Vec<u8>, ()>>,
         set_setting_ack: Sender<Result<Vec<u8>, ()>>,
 
-        summary_send: Sender<Result<Vec<u8>, ()>>,
+        write_char_ack: Sender<Result<Vec<u8>, ()>>,
 
+        summary_send: Sender<Result<Vec<u8>, ()>>,
         chunk_send: Sender<Result<Vec<u8>, ()>>,
 
         write_eeprom_ack: Sender<Result<Vec<u8>, ()>>,
@@ -388,6 +393,8 @@ impl INavMsp {
                     Some(MspCommandCode::MSP2_COMMON_PG_LIST) => &pg_settings,
                     Some(MspCommandCode::MSP2_COMMON_SETTING_INFO) => &setting_info,
                     Some(MspCommandCode::MSP2_COMMON_SET_SETTING) => &set_setting_ack,
+
+                    Some(MspCommandCode::MSP_OSD_CHAR_WRITE) => &write_char_ack,
 
                     Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => &summary_send,
                     Some(MspCommandCode::MSP_DATAFLASH_READ) => &chunk_send,
@@ -1193,6 +1200,30 @@ impl INavMsp {
         }
 
         return Ok(setting_ids);
+    }
+
+
+    pub async fn write_char(&self, addr: usize, char_pixels: [u8; 54]) -> Result<usize, &str>{
+        let mut payload = vec![];
+        if addr > u8::MAX as usize {
+            payload.extend((addr as u16).to_le_bytes().to_vec());
+        } else {
+            payload.push(addr as u8);
+        }
+        payload.extend(char_pixels.to_vec());
+
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_OSD_CHAR_WRITE as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: payload,
+        };
+
+        self.core.write(packet).await;
+
+        return match self.write_char_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(addr),
+            Err(_) => Err("failed to write char")
+        };
     }
 
     pub async fn save_to_eeprom(&self) -> Result<(), &str> {
