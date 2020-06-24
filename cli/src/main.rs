@@ -256,6 +256,7 @@ async fn main() {
             .port_name
             .clone()
     };
+    let is_strict = matches.is_present("strict");
 
     // TODO: what stop and start bits are inav using, is every one just using the canonical defalts?
     let serialport = open_with_settings(&port, &s)
@@ -451,8 +452,6 @@ async fn main() {
                         unreachable!();
                     }
 
-                    let is_strict = matches.is_present("strict");
-
                     let value = set_matches.value_of("value").unwrap();
                     upload_osd_layout_items(&inav, vec![value.to_string()], is_strict).await.unwrap();
                 },
@@ -559,8 +558,6 @@ async fn main() {
                     if !upload_matches.is_present("input") {
                         print!("missing input");
                     }
-
-                    let is_strict = matches.is_present("strict");
 
                     let input = upload_matches.value_of("input").unwrap();
                     let f = OpenOptions::new()
