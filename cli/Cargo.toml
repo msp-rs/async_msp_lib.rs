@@ -1,6 +1,6 @@
 [package]
 name = "async_msp_cli"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["Ilya Guterman <amfernusus@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
