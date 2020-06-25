@@ -119,3 +119,31 @@ binary will end up in `./target/release/async_msp_cli`.
 
 
 Dual-licensed under MIT or the [UNLICENSE](https://unlicense.org).
+
+
+### Build
+
+prerequisites
+
+``` bash
+install docker
+cargo install cross
+cargo install --force cargo-make
+cargo make --makefile ./Cargo.toml release-darwin
+export PATH=$HOME/.cargo/bin:$PATH
+```
+
+debug build
+```
+cargo build
+
+```
+
+build all relases
+```
+cargo make --makefile ./Cargo.toml release-all
+```
+
+
+
+
