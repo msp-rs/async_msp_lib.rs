@@ -55,7 +55,8 @@ config                          Get all configs
 reboot                          Reboot the device
 
 OPTIONS:
-    -p, --port <port>    device serial port
+        --flavor <flavor>       [possible values: inav, baseflight, betafligth]
+    -p, --port   <port>         device serial port
 
 FLAGS:
     -h, --help       Prints help information

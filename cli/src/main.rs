@@ -23,6 +23,7 @@ use std::convert::From;
 use futures::future::try_join_all;
 use futures::stream::FuturesUnordered;
 use clap::{App, AppSettings, Arg};
+
 use multiwii_serial_protocol_v2::structs::*;
 use std::collections::HashMap;
 use packed_struct::PrimitiveEnum;
@@ -41,6 +42,13 @@ static FEATURE_NAMES: [&str; 32] = [
     "SUPEREXPO", "VTX", "RX_SPI", "", "PWM_SERVO_DRIVER", "PWM_OUTPUT_ENABLE",
     "OSD", "FW_LAUNCH", "",
 ];
+
+#[derive(PartialEq, Debug)]
+pub enum FcFlavor {
+    INav,
+    Basefligth,
+    Betaflight,
+}
 
 #[async_std::main]
 async fn main() {
@@ -245,6 +253,13 @@ async fn main() {
                 .about("stop if setting not found in fc")
                 .required(false)
         )
+        .arg(
+            Arg::with_name("flavor")
+                .long("flavor")
+                .possible_values(&["inav", "baseflight", "betafligth"])
+                .case_insensitive(true)
+                .required(false)
+        )
         .get_matches();
 
 
@@ -267,6 +282,18 @@ async fn main() {
             .clone()
     };
     let is_strict = matches.is_present("strict");
+
+    let flavor = match matches.value_of("flavor") {
+        Some(p) => {
+            match p {
+                "inav" => FcFlavor::INav,
+                "baseflight" => FcFlavor::Basefligth,
+                "betafligth" => FcFlavor::Betaflight,
+                _ => FcFlavor::INav,
+            }
+        },
+        None => FcFlavor::INav,
+    };
 
     // TODO: what stop and start bits are inav using, is every one just using the canonical defalts?
     let serialport = open_with_settings(&port, &s)
@@ -371,10 +398,16 @@ async fn main() {
                     }
 
                     let value = set_matches.value_of("value").unwrap();
-                    upload_smix(&inav, value).await.unwrap();
+                    match flavor {
+                        FcFlavor::INav => upload_smix_inav(&inav, value).await.unwrap(),
+                        _ => upload_smix(&inav, value).await.unwrap(),
+                    };
                 },
                 ("", None) => {
-                    let dump = dump_smix(&inav).await.unwrap();
+                    let dump = match flavor {
+                        FcFlavor::INav => dump_smix_inav(&inav).await.unwrap(),
+                        _ => dump_smix(&inav).await.unwrap()
+                    };
                     for d in dump {
                         println!("{}", d);
                     }
@@ -632,24 +665,50 @@ async fn main() {
                         None => (),
                     };
 
+                    // TODO: avoid this code duplication somehow
                     match lookup.get("smix") {
                         Some(values) => {
-                            let mut futures = values
-                                .iter()
-                                .map(|v| upload_smix(&inav, v))
-                                .collect::<FuturesUnordered<_>>();
+                            match flavor {
+                                FcFlavor::INav => {
+                                    let mut futures =
+                                        values
+                                        .iter()
+                                        .map(|v| upload_smix_inav(&inav, v))
+                                        .collect::<FuturesUnordered<_>>();
 
-                            loop {
-                                match futures.next().await {
-                                    Some(Ok(result)) => println!("smix {}", result),
-                                    Some(Err(e)) => {
-                                        eprintln!("failed to set some smix {}", e);
-                                        if is_strict {
-                                            return;
+                                    loop {
+                                        match futures.next().await {
+                                            Some(Ok(result)) => println!("smix {}", result),
+                                            Some(Err(e)) => {
+                                                eprintln!("failed to set some smix {}", e);
+                                                if is_strict {
+                                                    return;
+                                                }
+                                            },
+                                            None => break,
                                         }
-                                    },
-                                    None => break,
-                                }
+                                    }
+                                },
+                                _ => {
+                                    let mut futures =
+                                        values
+                                        .iter()
+                                        .map(|v| upload_smix(&inav, v))
+                                        .collect::<FuturesUnordered<_>>();
+
+                                    loop {
+                                        match futures.next().await {
+                                            Some(Ok(result)) => println!("smix {}", result),
+                                            Some(Err(e)) => {
+                                                eprintln!("failed to set some smix {}", e);
+                                                if is_strict {
+                                                    return;
+                                                }
+                                            },
+                                            None => break,
+                                        }
+                                    }
+                                },
                             }
                         },
                         None => (),
@@ -789,9 +848,19 @@ async fn main() {
                         println!("mmix {}", d);
                     }
 
-                    for d in dump_smix(&inav).await.unwrap() {
-                        println!("smix {}", d);
-                    }
+                    match flavor {
+                        FcFlavor::INav => {
+                            for d in dump_smix_inav(&inav).await.unwrap() {
+                                println!("smix {}", d);
+                            }
+
+                        },
+                        _ => {
+                            for d in dump_smix(&inav).await.unwrap() {
+                                println!("smix {}", d);
+                            }
+                        },
+                    };
 
                     for d in dump_servo(&inav).await.unwrap() {
                         println!("servo {}", d);
@@ -982,6 +1051,45 @@ async fn upload_smix<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b st
     };
 
     inav.set_servo_mix_rule(u8::from_str(index).unwrap(), smix).await?;
+    Ok(value)
+}
+
+async fn dump_smix_inav(inav: &INavMsp) -> Result<Vec<String>, &str> {
+    let mixers = inav.get_servo_mixer().await?;
+    let dump: Vec<String> = mixers
+        .iter()
+        .enumerate()
+        .map(|(i, m)| format!("{} {} {} {} {} {}",
+                              i,
+                              m.target_channel,
+                              m.input_source,
+                              m.rate,
+                              m.speed,
+                              m.condition_id)
+        ).collect();
+
+    return Ok(dump);
+}
+
+async fn upload_smix_inav<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+    let mut split_iter = value.split_whitespace();
+
+    let index = split_iter.next().unwrap();
+    let target_channel = split_iter.next().unwrap();
+    let input_source = split_iter.next().unwrap();
+    let rate = split_iter.next().unwrap();
+    let speed = split_iter.next().unwrap();
+    let condition_id = split_iter.next().unwrap();
+
+    let smix = MspServoMixer {
+        target_channel: u8::from_str(target_channel).unwrap(),
+        input_source: u8::from_str(input_source).unwrap(),
+        rate: u16::from_str(rate).unwrap(),
+        speed: u8::from_str(speed).unwrap(),
+        condition_id: u8::from_str(condition_id).unwrap(),
+    };
+
+    inav.set_servo_mixer(u8::from_str(index).unwrap(), smix).await?;
     Ok(value)
 }
 

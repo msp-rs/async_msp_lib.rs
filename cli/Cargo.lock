@@ -94,9 +94,9 @@ dependencies = [
 
 [[package]]
 name = "async_msp_lib"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a345250f25943ebba0d0d7489242faa44b78b0052f80d5af3889928dd3b1fd7"
+checksum = "af43cf395ce6479ef54f32ebb9f4b94cd87e70cf311ec4b9eaa952d4a341a2d2"
 dependencies = [
  "async-std",
  "multiwii_serial_protocol_v2",
@@ -577,9 +577,9 @@ dependencies = [
 
 [[package]]
 name = "multiwii_serial_protocol_v2"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9f177a40e95608fe296c86737fd00a43b113afc651fc9b02a72c3f1136f9a3c"
+checksum = "8d00f07f82062a09de6bfdf1ed63f7da2ef2e398c8d7b14fd732d0eaeddf1cb6"
 dependencies = [
  "crc-any",
  "packed_struct",
