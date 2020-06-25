@@ -21,3 +21,6 @@ packed_struct_codegen = "0.3"
 [dependencies.async-std]
 version = "=1.5.0"
 features = ["unstable", "attributes"]
+
+[features]
+suppport_int32_setting_type = ["multiwii_serial_protocol_v2/suppport_int32_setting_type"]

@@ -65,6 +65,8 @@ impl SettingInfo {
             SettingType::VarUint16 => Ok(value.parse::<u16>().unwrap().to_le_bytes().to_vec()),
             SettingType::VarInt16 => Ok(value.parse::<i16>().unwrap().to_le_bytes().to_vec()),
             SettingType::VarUint32 => Ok(value.parse::<u32>().unwrap().to_le_bytes().to_vec()),
+            #[cfg(feature="suppport_int32_setting_type")]
+            SettingType::VarInt32 => Ok(value.parse::<i32>().unwrap().to_le_bytes().to_vec()),
             SettingType::VarFloat => Ok(value.parse::<f32>().unwrap().to_le_bytes().to_vec()),
             SettingType::VarString => Ok(value.as_bytes().to_vec()),
         };
@@ -97,6 +99,11 @@ impl From<&SettingInfo> for String {
             SettingType::VarUint32 => {
                 let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<u32>());
                 return u32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
+            }
+            #[cfg(feature="suppport_int32_setting_type")]
+            SettingType::VarInt32 => {
+                let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<i32>());
+                return i32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
             }
             SettingType::VarFloat => {
                 let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<f32>());
