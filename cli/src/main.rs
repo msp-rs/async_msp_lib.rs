@@ -22,7 +22,7 @@ use std::str::FromStr;
 use std::convert::From;
 use futures::future::try_join_all;
 use futures::stream::FuturesUnordered;
-use clap_v3::{App, AppSettings, Arg};
+use clap::{App, AppSettings, Arg};
 use multiwii_serial_protocol_v2::structs::*;
 use std::collections::HashMap;
 use packed_struct::PrimitiveEnum;
@@ -45,10 +45,8 @@ static FEATURE_NAMES: [&str; 32] = [
 #[async_std::main]
 async fn main() {
 
-    // TODO: implement port arguments
-
     let matches = App::new("msp")
-        .version("0.0.1")
+        .version("0.1.5")
         .author("Ilya G. <amfernusus@gmail.com>")
         .about("Interact with msp flight controller")
         .subcommand(
@@ -61,20 +59,20 @@ async fn main() {
                     App::new("set")
                         .about("Set common setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("name").help("The setting name to set").required(true).takes_value(true))
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("name").about("The setting name to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
                 .subcommand(
                     App::new("get")
                         .about("get common setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("name").help("The setting name to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("name").about("The setting name to set").required(true).takes_value(true))
                 )
                 .subcommand(
                     App::new("set-all")
                         .about("Set all common setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("input").help("settings file path").required(true).takes_value(true))
+                        .arg(Arg::with_name("input").about("settings file path").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -84,7 +82,7 @@ async fn main() {
                     App::new("set")
                         .about("Set aux setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -94,7 +92,7 @@ async fn main() {
                     App::new("set")
                         .about("Set mmix setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -104,7 +102,7 @@ async fn main() {
                     App::new("set")
                         .about("Set smix setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -114,7 +112,7 @@ async fn main() {
                     App::new("set")
                         .about("Set servo setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -124,7 +122,7 @@ async fn main() {
                     App::new("set")
                         .about("Set rx map setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -134,7 +132,7 @@ async fn main() {
                     App::new("set")
                         .about("Set serial setting")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -144,7 +142,7 @@ async fn main() {
                     App::new("set")
                         .about("Set osd item")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -154,7 +152,7 @@ async fn main() {
                     App::new("set")
                         .about("Set osd layout item")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -164,19 +162,19 @@ async fn main() {
                     App::new("set")
                         .about("Set features(FEATURE_NAME:enable, -FEATURE_NAME:disable)")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
                 .subcommand(
                     App::new("enable")
                         .about("Enable feature")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
                 .subcommand(
                     App::new("disable")
                         .about("Disable feature")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("value").help("The setting value to set").required(true).takes_value(true))
+                        .arg(Arg::with_name("value").about("The setting value to set").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -186,13 +184,13 @@ async fn main() {
                     App::new("download")
                         .about("Download blackbox concurrently")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("input").help("download path").required(true).takes_value(true))
+                        .arg(Arg::with_name("input").about("download path").required(true).takes_value(true))
                 )
                 .subcommand(
                     App::new("downloadv2")
                         .about("Pull blackbox serially")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("input").help("download path").required(true).takes_value(true))
+                        .arg(Arg::with_name("input").about("download path").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -202,7 +200,7 @@ async fn main() {
                     App::new("set")
                         .about("Upload all configs")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("input").help("settings file path").required(true).takes_value(true))
+                        .arg(Arg::with_name("input").about("settings file path").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -212,7 +210,7 @@ async fn main() {
                     App::new("set")
                         .about("Upload all font")
                         .setting(AppSettings::ArgRequiredElseHelp)
-                        .arg(Arg::with_name("input").help(".mcm font file file path").required(true).takes_value(true))
+                        .arg(Arg::with_name("input").about(".mcm font file file path").required(true).takes_value(true))
                 )
         )
         .subcommand(
@@ -223,7 +221,7 @@ async fn main() {
             Arg::with_name("port")
                 .short('p')
                 .long("port")
-                .help("device serial port")
+                .about("device serial port")
                 .required(false)
                 .takes_value(true)
         )
@@ -231,20 +229,20 @@ async fn main() {
             Arg::with_name("save")
                 .short('s')
                 .long("save")
-                .help("settings file path")
+                .about("settings file path")
                 .required(false)
         )
         .arg(
             Arg::with_name("reboot")
                 .short('r')
                 .long("reboot")
-                .help("reboot fc")
+                .about("reboot fc")
                 .required(false)
         )
         .arg(
             Arg::with_name("strict")
                 .long("strict")
-                .help("stop if setting not found in fc")
+                .about("stop if setting not found in fc")
                 .required(false)
         )
         .get_matches();
