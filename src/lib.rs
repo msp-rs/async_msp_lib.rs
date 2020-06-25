@@ -192,6 +192,9 @@ pub struct INavMsp {
     servo_configs: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
     set_servo_configs_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
+    servo_mixer: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+    set_servo_mixer_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+
     rx_map: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
     set_rx_map_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
@@ -235,6 +238,9 @@ impl INavMsp {
 
             servo_mix_rules: channel::<Result<Vec<u8>, ()>>(100),
             set_servo_mix_rules_ack: channel::<Result<Vec<u8>, ()>>(100),
+
+            servo_mixer: channel::<Result<Vec<u8>, ()>>(100),
+            set_servo_mixer_ack: channel::<Result<Vec<u8>, ()>>(100),
 
             servo_configs: channel::<Result<Vec<u8>, ()>>(100),
             set_servo_configs_ack: channel::<Result<Vec<u8>, ()>>(100),
@@ -283,6 +289,9 @@ impl INavMsp {
             self.servo_mix_rules.0.clone(),
             self.set_servo_mix_rules_ack.0.clone(),
 
+            self.servo_mixer.0.clone(),
+            self.set_servo_mixer_ack.0.clone(),
+
             self.servo_configs.0.clone(),
             self.set_servo_configs_ack.0.clone(),
 
@@ -325,6 +334,9 @@ impl INavMsp {
 
         servo_mix_rules_send: Sender<Result<Vec<u8>, ()>>,
         set_servo_mix_rules_ack_send: Sender<Result<Vec<u8>, ()>>,
+
+        servo_mixer_send: Sender<Result<Vec<u8>, ()>>,
+        set_servo_mixer_ack_send: Sender<Result<Vec<u8>, ()>>,
 
         servo_configs_send: Sender<Result<Vec<u8>, ()>>,
         set_servo_configs_ack_send: Sender<Result<Vec<u8>, ()>>,
@@ -383,6 +395,9 @@ impl INavMsp {
 
                     Some(MspCommandCode::MSP_SERVO_MIX_RULES) => &servo_mix_rules_send,
                     Some(MspCommandCode::MSP_SET_SERVO_MIX_RULE) => &set_servo_mix_rules_ack_send,
+
+                    Some(MspCommandCode::MSP2_INAV_SERVO_MIXER) => &servo_mixer_send,
+                    Some(MspCommandCode::MSP2_INAV_SET_SERVO_MIXER) => &set_servo_mixer_ack_send,
 
                     Some(MspCommandCode::MSP_SERVO_CONFIGURATIONS) => &servo_configs_send,
                     Some(MspCommandCode::MSP_SET_SERVO_CONFIGURATION) => &set_servo_configs_ack_send,
@@ -974,6 +989,53 @@ impl INavMsp {
 
         for i in (0..payload.len()).step_by(len) {
             let serial_setting = MspServoMixRule::unpack_from_slice(&payload[i..i+len]).unwrap();
+            if serial_setting.rate != 0 {
+                rules.push(serial_setting);
+            }
+        }
+
+        return Ok(rules);
+    }
+
+    pub async fn set_servo_mixer(&self, index: u8, servo_rule: MspServoMixer) -> Result<(), &str> {
+        let payload = MspSetServoMixer {
+            index: index,
+            servo_rule: servo_rule,
+        };
+
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_INAV_SET_SERVO_MIXER as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: payload.pack().to_vec(),
+        };
+
+        self.core.write(packet).await;
+
+        return match self.set_servo_mixer_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to set servo mixer")
+        };
+    }
+
+    pub async fn get_servo_mixer(&self) -> Result<Vec<MspServoMixer>, &str> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP2_INAV_SERVO_MIXER as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.core.write(packet).await;
+
+        let payload = match self.servo_mixer.1.recv().await.unwrap() {
+            Ok(r) => r,
+            Err(_) => return Err("failed to get servo mixer")
+        };
+
+        let mut rules = vec![];
+        let len = MspServoMixer::packed_bytes();
+
+        for i in (0..payload.len()).step_by(len) {
+            let serial_setting = MspServoMixer::unpack_from_slice(&payload[i..i+len]).unwrap();
             if serial_setting.rate != 0 {
                 rules.push(serial_setting);
             }
