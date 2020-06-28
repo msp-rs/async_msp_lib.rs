@@ -54,6 +54,8 @@ config                          Get all configs
 
 reboot                          Reboot the device
 
+dfu                             Reboot into dfu mode
+
 OPTIONS:
         --flavor <flavor>       [possible values: inav, baseflight, betafligth]
     -p, --port   <port>         device serial port
