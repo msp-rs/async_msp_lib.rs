@@ -4,7 +4,7 @@ extern crate multiwii_serial_protocol_v2;
 
 extern crate serialport;
 
-use serialport::{available_ports, open_with_settings};
+use serialport::{available_ports, open_with_settings, SerialPortType};
 
 extern crate packed_struct;
 extern crate packed_struct_codegen;
@@ -45,7 +45,7 @@ static FEATURE_NAMES: [&str; 32] = [
 
 #[derive(PartialEq, Debug)]
 pub enum FcFlavor {
-    INav,
+    INav {vid: u16, pid: u16},
     Basefligth,
     Betaflight,
 }
@@ -257,11 +257,25 @@ async fn main() {
             Arg::with_name("flavor")
                 .long("flavor")
                 .possible_values(&["inav", "baseflight", "betafligth"])
+                .default_values(&["inav"])
                 .case_insensitive(true)
                 .required(false)
         )
         .get_matches();
 
+    let is_strict = matches.is_present("strict");
+
+    let flavor = match matches.value_of("flavor") {
+        Some(p) => {
+            match p {
+                "inav" => FcFlavor::INav{vid: 0x0483, pid: 0x5740},
+                "baseflight" => FcFlavor::Basefligth,
+                "betafligth" => FcFlavor::Betaflight,
+                _ => panic!("unsupported flavor"),
+            }
+        },
+        None => panic!("default value not defined"),
+    };
 
     let s = serialport::SerialPortSettings {
         baud_rate: 115200,
@@ -274,25 +288,23 @@ async fn main() {
 
     let port = match matches.value_of("port") {
         Some(p) => String::from(p),
-        None =>  available_ports()
+        None => available_ports()
             .expect("No serial ports")
-            .first()
-            .expect("No serial ports, specify with -p")
+            .iter()
+            .find(|p| {
+                match &p.port_type {
+                    SerialPortType::UsbPort(info) => {
+                        match flavor {
+                            FcFlavor::INav {vid, pid} => return info.vid == vid && info.pid == pid,
+                            _ => return false, // TODO: find betafligth and basefligth vid and pid
+                        }
+                    }
+                    _ => return false,
+                }
+            })
+            .expect("No inav serial ports found, please specify manually with -p")
             .port_name
             .clone()
-    };
-    let is_strict = matches.is_present("strict");
-
-    let flavor = match matches.value_of("flavor") {
-        Some(p) => {
-            match p {
-                "inav" => FcFlavor::INav,
-                "baseflight" => FcFlavor::Basefligth,
-                "betafligth" => FcFlavor::Betaflight,
-                _ => FcFlavor::INav,
-            }
-        },
-        None => FcFlavor::INav,
     };
 
     // TODO: what stop and start bits are inav using, is every one just using the canonical defalts?
@@ -399,13 +411,13 @@ async fn main() {
 
                     let value = set_matches.value_of("value").unwrap();
                     match flavor {
-                        FcFlavor::INav => upload_smix_inav(&inav, value).await.unwrap(),
+                        FcFlavor::INav{vid: _, pid: _} => upload_smix_inav(&inav, value).await.unwrap(),
                         _ => upload_smix(&inav, value).await.unwrap(),
                     };
                 },
                 ("", None) => {
                     let dump = match flavor {
-                        FcFlavor::INav => dump_smix_inav(&inav).await.unwrap(),
+                        FcFlavor::INav{vid: _, pid: _} => dump_smix_inav(&inav).await.unwrap(),
                         _ => dump_smix(&inav).await.unwrap()
                     };
                     for d in dump {
@@ -669,7 +681,7 @@ async fn main() {
                     match lookup.get("smix") {
                         Some(values) => {
                             match flavor {
-                                FcFlavor::INav => {
+                                FcFlavor::INav{vid: _, pid: _} => {
                                     let mut futures =
                                         values
                                         .iter()
@@ -849,7 +861,7 @@ async fn main() {
                     }
 
                     match flavor {
-                        FcFlavor::INav => {
+                        FcFlavor::INav{vid: _, pid: _} => {
                             for d in dump_smix_inav(&inav).await.unwrap() {
                                 println!("smix {}", d);
                             }
