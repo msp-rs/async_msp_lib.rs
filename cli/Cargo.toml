@@ -14,7 +14,7 @@ keywords = ["msp", "multiwii", "inav", "betaflight"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-multiwii_serial_protocol_v2 = "0.1.9"
+multiwii_serial_protocol_v2 = "0.1.11"
 async_msp_lib = "0.1.7"
 serialport = "3.3.0"
 packed_struct = "0.3"
