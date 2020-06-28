@@ -3,7 +3,8 @@ extern crate multiwii_serial_protocol_v2;
 extern crate serialport;
 extern crate packed_struct;
 
-use multiwii_serial_protocol_v2::{MspPacket, MspParser};
+use futures::{select};
+use multiwii_serial_protocol_v2::{MspPacket, MspParser, MspPacketParseError};
 
 use async_std::sync::{channel, Arc, Condvar, Mutex, Sender, Receiver};
 use async_std::task;
@@ -13,6 +14,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::VecDeque;
 
 
+pub enum MspCoreError {
+    Base(MspPacketParseError),
+    IOError { e: async_std::io::Error },
+}
+
 #[derive(Clone)]
 pub struct Core {
     parser_locked: Arc<Mutex<MspParser>>,
@@ -20,6 +26,8 @@ pub struct Core {
     buff_size: usize,
     msp_write_delay: Duration,
 
+    error_send: Sender<MspCoreError>,
+    error_recv: Receiver<MspCoreError>,
     msp_reader_send: Sender<MspPacket>,
     msp_reader_recv: Receiver<MspPacket>,
     msp_writer_send: Sender<MspPacket>,
@@ -35,6 +43,7 @@ impl Core {
             _ => buff_size,
         };
         let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(write_buff_size);
+        let (error_send, error_recv) = channel::<MspCoreError>(1);
 
         let parser = MspParser::new();
         let parser_locked = Arc::new(Mutex::new(parser));
@@ -44,6 +53,8 @@ impl Core {
             msp_write_delay,
             verbose,
             parser_locked,
+            error_send,
+            error_recv,
             msp_reader_send,
             msp_reader_recv,
             msp_writer_send,
@@ -60,19 +71,48 @@ impl Core {
 
         if &self.buff_size > &0 {
             let reader = stream.clone();
-            Core::process_input(reader, self.parser_locked.clone(), self.msp_reader_send.clone(), serial_write_lock, elapsed_queue_lock, self.verbose.clone());
+            Core::process_input(reader, self.parser_locked.clone(), self.error_send.clone(), self.msp_reader_send.clone(), serial_write_lock, elapsed_queue_lock, self.verbose.clone());
         }
-        Core::process_output(stream, self.msp_writer_recv.clone(), serial_write_lock_clone, self.msp_write_delay.clone(), elapsed_queue_lock_clone, self.verbose.clone());
+        Core::process_output(stream, self.error_send.clone(), self.msp_writer_recv.clone(), serial_write_lock_clone, self.msp_write_delay.clone(), elapsed_queue_lock_clone, self.verbose.clone());
     }
 
-    pub async fn read(&self) -> std::option::Option<MspPacket> {
-        return match self.msp_reader_recv.recv().await {
-            Err(_) => None,
-            Ok(packet) => Some(packet),
+    // pub async fn get_error(&self) -> Option<MspCoreError> {
+    //     return match self.error_recv.try_recv() {
+    //         Ok(error) => Some(error),
+    //         Err(_) => None,
+    //     };
+    // }
+
+    // pub async fn read(&self) -> Result<MspPacket, MspCoreError> {
+    //     return match self.msp_reader_recv.recv().await {
+    //         Ok(packet) => Ok(packet),
+    //         _ => Err(MspCoreError::IOError{e: async_std::io::Error::new(async_std::io::ErrorKind::ConnectionAborted, "Msp core reader exited")})
+    //     };
+    // }
+
+    pub async fn read(&self) -> Result<MspPacket, MspCoreError> {
+        return select! {
+            packet = self.msp_reader_recv.recv() => match packet {
+                Ok(packet) => Ok(packet),
+                // pipe closed, nothign to do
+                _ => Err(MspCoreError::IOError{e: async_std::io::Error::new(async_std::io::ErrorKind::ConnectionAborted, "Msp core reader exited")})
+            },
+            error = self.error_recv.recv() => match error {
+                Ok(error) => Err(error),
+                // pipe closed, nothign to do
+                _ => Err(MspCoreError::IOError{e: async_std::io::Error::new(async_std::io::ErrorKind::ConnectionAborted, "Msp core reader exited")})
+            }
         };
     }
 
-    pub async fn write(&self, packet: MspPacket)  {
+    pub async fn write(&self, packet: MspPacket) -> Result<(), MspCoreError> {
+        match self.error_recv.recv() {
+            Ok(error) => Err(error),
+            // pipe closed, nothign to do
+            _ => Err(MspCoreError::IOError{e: async_std::io::Error::new(async_std::io::ErrorKind::ConnectionAborted, "Msp core reader exited")})
+        }
+    };
+
         self.msp_writer_send.send(packet).await;
     }
 
@@ -83,6 +123,7 @@ impl Core {
     fn process_input(
         mut serial: impl Send + std::io::Read + 'static,
         parser_locked: Arc<Mutex<MspParser>>,
+        error_send: Sender<MspCoreError>,
         msp_reader_send: Sender<MspPacket>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
         elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
@@ -126,7 +167,7 @@ impl Core {
                                         cvar.notify_one();
                                     }
                                 },
-                                Err(e) => eprintln!("bad crc {:?}", e),
+                                Err(e) => error_send.send(MspCoreError::Base(e)).await,
                                 Ok(None) => ()
                             }
                         }
@@ -136,7 +177,7 @@ impl Core {
                             println!("read timeout");
                         }
                     }
-                    Err(e) => eprintln!("{:?}", e),
+                    Err(e) => error_send.send(MspCoreError::IOError{e}).await,
                 }
 
                 task::yield_now().await;
@@ -148,6 +189,7 @@ impl Core {
     // TODO: return joinhandler, so we can stop the tasks on drop
     fn process_output(
         mut serial: impl Send + std::io::Write + 'static,
+        error_send: Sender<MspCoreError>,
         msp_writer_recv: Receiver<MspPacket>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
         write_delay: Duration,
@@ -208,8 +250,8 @@ impl Core {
                             task::yield_now().await;
                         },
                         Err(e) => {
-                            eprintln!("failed to write{:?}", e);
                             *(lock.lock().await) += 1;
+                            error_send.send(MspCoreError::IOError{e}).await
                         }
                     }
                 }
