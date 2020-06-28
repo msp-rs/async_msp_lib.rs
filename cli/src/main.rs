@@ -1084,9 +1084,9 @@ async fn upload_smix_inav<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&
     let smix = MspServoMixer {
         target_channel: u8::from_str(target_channel).unwrap(),
         input_source: u8::from_str(input_source).unwrap(),
-        rate: u16::from_str(rate).unwrap(),
+        rate: i16::from_str(rate).unwrap(),
         speed: u8::from_str(speed).unwrap(),
-        condition_id: u8::from_str(condition_id).unwrap(),
+        condition_id: i8::from_str(condition_id).unwrap(),
     };
 
     inav.set_servo_mixer(u8::from_str(index).unwrap(), smix).await?;
@@ -1123,7 +1123,7 @@ async fn upload_servo<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b s
         min: u16::from_str(min).unwrap(),
         max: u16::from_str(max).unwrap(),
         middle: u16::from_str(middle).unwrap(),
-        rate: u8::from_str(rate).unwrap(),
+        rate: i8::from_str(rate).unwrap(),
         unused1: 0,
         unused2: 0,
         forward_from_channel: 255,
