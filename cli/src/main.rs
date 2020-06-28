@@ -225,6 +225,10 @@ async fn main() {
             App::new("reboot")
                 .about("Reboot the device")
         )
+        .subcommand(
+            App::new("dfu")
+                .about("Reboot into dfu mode")
+        )
         .arg(
             Arg::with_name("port")
                 .short('p')
@@ -307,7 +311,20 @@ async fn main() {
             .clone()
     };
 
-    // TODO: what stop and start bits are inav using, is every one just using the canonical defalts?
+    match matches.subcommand() {
+        ("dfu", _) => {
+            let msg = "R\n";
+            let mut s = open_with_settings(&port, &s)
+                .expect("Failed to open serial port");
+
+            s.write_all(msg.as_bytes())
+                .expect("Unable to write bytes.");
+            return;
+        },
+        _ => ()
+    }
+
+
     let serialport = open_with_settings(&port, &s)
         .expect("Failed to open serial port");
 
