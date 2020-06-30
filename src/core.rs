@@ -79,7 +79,10 @@ impl Core {
                     Ok(bytes) => {
                         for n in 0..bytes {
                             match (*parser_locked.lock().await).parse(serial_buf[n]) {
-                                Ok(Some(p)) => msp_reader_send.send(p).await,
+                                Ok(Some(p)) => {
+                                    // println!("reading");
+                                    msp_reader_send.send(p).await;
+                                },
                                 Err(e) => eprintln!("bad crc {:?}", e),
                                 Ok(None) => ()
                             }
@@ -112,16 +115,23 @@ impl Core {
                     .serialize_v2(&mut output)
                     .expect("Failed to serialize");
 
+                // println!("writing {:?}", packet);
                 // because inav doesn't support uart flow control, we simply try write untill success
                 loop {
                     match serial.write(&output) {
-                        Ok(_) => break,
+                        Ok(_) => {
+                            task::yield_now().await;
+                            break
+                        },
                         Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
                             // controller is busy/serial buffer is full, sleep and attempt write again
+                            // println!("write timeout, retrying");
                             task::sleep(Duration::from_millis(1)).await;
                         }
                         Err(e) => eprintln!("failed to write{:?}", e),
                     }
+
+                    task::yield_now().await;
                 }
             }
         });
