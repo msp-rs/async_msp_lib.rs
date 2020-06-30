@@ -49,9 +49,33 @@ command = "cross"
 args = ["build", "--target", "x86_64-pc-windows-gnu", "--release"]
 dependencies = ["clean"]
 
+
+[tasks.release-int32]
+command = "cargo"
+args = ["build", "--release", "--features", "suppport_int32_setting_type"]
+dependencies = ["clean"]
+
+[tasks.release-darwin-int32]
+command = "docker"
+args = ["run", "--rm", "--volume", "${PWD}:/root/src", "--workdir", "/root/src", "joseluisq/rust-linux-darwin-builder:1.43.0", "cargo", "build", "--release", "--target", "x86_64-apple-darwin", "--features", "suppport_int32_setting_type"]
+dependencies = ["clean"]
+
+[tasks.release-windows-int32]
+command = "cross"
+args = ["build", "--target", "x86_64-pc-windows-gnu", "--release", "--features", "suppport_int32_setting_type"]
+dependencies = ["clean"]
+
+
 [tasks.release-all]
 dependencies = [
     "release",
     "release-darwin",
     "release-windows",
+]
+
+[tasks.release-all-int32]
+dependencies = [
+    "release-int32",
+    "release-darwin-int32",
+    "release-windows-int32",
 ]
