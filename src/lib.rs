@@ -376,7 +376,10 @@ impl INavMsp {
 
                 let result = match packet.direction {
                     MspPacketDirection::FromFlightController => Ok(packet.data),
-                    MspPacketDirection::Unsupported => Err(()),
+                    MspPacketDirection::Unsupported => {
+                        println!("got unsupported msp direction {:?}", packet);
+                        Err(())
+                    },
                     _ => continue,
                 };
 
