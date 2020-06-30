@@ -27,7 +27,7 @@ impl Core {
     /// Create new core msp reader and parser
     pub fn new() -> Core {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
-        let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(4096);
+        let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1);
 
         let parser = MspParser::new();
         let parser_locked = Arc::new(Mutex::new(parser));
