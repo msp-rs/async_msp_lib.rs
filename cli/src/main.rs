@@ -1491,7 +1491,7 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
             }
         };
 
-        acc.push((i, buf_val));
+        acc.push((&s.info.absolute_index, buf_val));
         return Some(acc)
     });
 
