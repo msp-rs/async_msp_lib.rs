@@ -42,6 +42,7 @@ impl Core {
 	  }
 
     pub fn start(&self, serial: Box<dyn SerialPort>) {
+        serial.clear(serialport::ClearBuffer::All).unwrap();
         let serial_clone = serial.try_clone().unwrap();
 
         Core::process_input(serial, self.parser_locked.clone(), self.msp_reader_send.clone());
