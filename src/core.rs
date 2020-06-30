@@ -121,18 +121,17 @@ impl Core {
                 loop {
                     match serial.write(&output) {
                         Ok(_) => {
-                            task::yield_now().await;
+                            task::sleep(Duration::from_millis(10)).await; // match the inav msp loop of 100hz
                             break
                         },
                         Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
                             // controller is busy/serial buffer is full, sleep and attempt write again
                             // println!("write timeout, retrying");
-                            task::sleep(Duration::from_millis(1)).await;
                         }
                         Err(e) => eprintln!("failed to write{:?}", e),
                     }
 
-                    task::yield_now().await;
+                    task::sleep(Duration::from_millis(10)).await; // match the inav msp loop of 100hz
                 }
             }
         });
