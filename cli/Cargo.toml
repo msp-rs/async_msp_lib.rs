@@ -39,6 +39,11 @@ command = "cargo"
 args = ["build", "--release"]
 dependencies = ["clean"]
 
+[tasks.mkdir-dist]
+command = "docker"
+args = ["cp ", "--volume", "${PWD}:/root/src", "--workdir", "/root/src", "joseluisq/rust-linux-darwin-builder:1.43.0", "cargo", "build", "--release", "--target", "x86_64-apple-darwin"]
+dependencies = ["clean"]
+
 [tasks.release-darwin]
 command = "docker"
 args = ["run", "--rm", "--volume", "${PWD}:/root/src", "--workdir", "/root/src", "joseluisq/rust-linux-darwin-builder:1.43.0", "cargo", "build", "--release", "--target", "x86_64-apple-darwin"]
@@ -49,6 +54,17 @@ command = "cross"
 args = ["build", "--target", "x86_64-pc-windows-gnu", "--release"]
 dependencies = ["clean"]
 
+[tasks.dist-folder]
+command = "mkdir"
+args = ["-p", "dist"]
+
+[tasks.copy-to-dist]
+script = [
+    "cp target/x86_64-pc-windows-gnu/release/async_msp_cli.exe dist/async_msp_cli_windows.exe",
+    "cp target/x86_64-apple-darwin/release/async_msp_cli dist/async_msp_cli_darwin",
+    "cp target/release/async_msp_cli dist/async_msp_cli_linux",
+]
+dependencies = ["dist-folder"]
 
 [tasks.release-int32]
 command = "cargo"
@@ -65,12 +81,20 @@ command = "cross"
 args = ["build", "--target", "x86_64-pc-windows-gnu", "--release", "--features", "suppport_int32_setting_type"]
 dependencies = ["clean"]
 
+[tasks.copy-to-dist-int32]
+script = [
+    "cp target/x86_64-pc-windows-gnu/release/async_msp_cli.exe dist/async_msp_cli_windows_int32.exe",
+    "cp target/x86_64-apple-darwin/release/async_msp_cli dist/async_msp_cli_darwin_int32",
+    "cp target/release/async_msp_cli dist/async_msp_cli_linux_int32",
+]
+dependencies = ["dist-folder"]
 
 [tasks.release-all]
 dependencies = [
     "release",
     "release-darwin",
     "release-windows",
+    "copy-to-dist",
 ]
 
 [tasks.release-all-int32]
@@ -78,4 +102,5 @@ dependencies = [
     "release-int32",
     "release-darwin-int32",
     "release-windows-int32",
+    "copy-to-dist-int32",
 ]
