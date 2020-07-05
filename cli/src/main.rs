@@ -1452,9 +1452,8 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
 
     let setting_list_key_vals = setting_list
         .iter()
-        .enumerate()
-        .fold(HashMap::new(), |mut acc, (i, s) | {
-            acc.insert(s.name.to_owned(), (i as u16, s));
+        .fold(HashMap::new(), |mut acc, s| {
+            acc.insert(s.name.to_owned(), s);
             acc
         });
 
@@ -1469,8 +1468,8 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
 
 
     let id_buf_valus_res = set_settings_list.iter().try_fold(vec![], |mut acc, (name, val)| {
-        let (i, s) = match setting_list_key_vals.get(name) {
-            Some((i, s)) => (i, s),
+        let info = match setting_list_key_vals.get(name) {
+            Some(i) => i,
             None => {
                 eprintln!("unsupported setting {}", &name);
                 if strict {
@@ -1480,7 +1479,7 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
             }
         };
 
-        let buf_val = match s.setting_to_vec(&val) {
+        let buf_val = match info.setting_to_vec(&val) {
             Ok(buf_val) => buf_val,
             Err(e) => {
                 eprintln!("unsupported setting value {} {}", &name, e);
@@ -1491,7 +1490,7 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
             }
         };
 
-        acc.push((&s.info.absolute_index, buf_val));
+        acc.push((&info.info.absolute_index, buf_val));
         return Some(acc)
     });
 
