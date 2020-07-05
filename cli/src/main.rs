@@ -209,6 +209,10 @@ async fn main() {
                         .about("Upload all configs")
                         .setting(AppSettings::ArgRequiredElseHelp)
                         .arg(Arg::with_name("input").about("settings file path").required(true).takes_value(true))
+                        .arg(Arg::with_name("by_name")
+                             .long("by-name")
+                             .about("describe settings by name, can be faster for small amount of settings")
+                             .required(false))
                 )
         )
         .subcommand(
@@ -865,7 +869,13 @@ async fn main() {
                     };
 
                     match lookup.get("set") {
-                        Some(values) => upload_common_settings(&inav, values.to_vec(), is_strict).await.unwrap(),
+                        Some(values) => {
+                            if upload_matches.is_present("by_name") {
+                                upload_common_settings_by_name(&inav, values.to_vec(), is_strict).await.unwrap();
+                            } else {
+                                upload_common_settings(&inav, values.to_vec(), is_strict).await.unwrap();
+                            }
+                        }
                         None => (),
                     };
 
@@ -1520,6 +1530,51 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
         &inav.set_setting_by_id(i, &v).await.unwrap();
     }
     return Ok(());
+}
+
+async fn upload_common_settings_by_name<'a>(inav: &'a INavMsp, values: Vec<String>, strict: bool) -> Result<(), &'a str> {
+    let set_settings_hash_map = values
+        .iter()
+        .fold(HashMap::new(), |mut acc, v| {
+            let mut split_iter = v.splitn(2, '=');
+            let name = split_iter.next().unwrap().to_string().trim().to_owned();
+            let val = split_iter.next().unwrap().to_string().trim().to_owned();
+
+            acc.insert(name, val);
+            acc
+        });
+
+    println!("describing settings by name");
+    let mut setting_infos = vec![];
+    for name in set_settings_hash_map.keys() {
+        match inav.get_setting_info_by_name(&name).await {
+            Ok(info) => setting_infos.push(info),
+            Err(e) => {
+                eprintln!("setting {} is unsupported {}", name, e);
+                if strict {
+                    return Err("some setting is unsupported");
+                }
+            }
+        };
+    }
+    println!("done describing");
+
+    for info in setting_infos {
+        let val = set_settings_hash_map.get(&info.name).unwrap();
+        println!("set {} {}", info.name, val);
+        match info.setting_to_vec(&val) {
+            Ok(buf_val) => inav.set_setting_by_id(&info.info.absolute_index, &buf_val).await.unwrap(),
+            Err(e) => {
+                eprintln!("unsupported setting value {} {} {}", info.name, val, e);
+                if strict {
+                    return Err("failed to configure some setting");
+                };
+                &0u16
+            }
+        };
+    }
+
+    Ok(())
 }
 
 async fn dump_common_setting(inav: &INavMsp) -> Result<Vec<String>, &str> {
