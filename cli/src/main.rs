@@ -20,7 +20,6 @@ use std::iter::Iterator;
 use std::convert::TryFrom;
 use std::str::FromStr;
 use std::convert::From;
-use futures::future::try_join_all;
 use futures::stream::FuturesUnordered;
 use clap::{App, AppSettings, Arg};
 
@@ -981,17 +980,7 @@ async fn main() {
 }
 
 async fn describe_settings(inav: &INavMsp) -> Result<Vec<SettingInfo>, &str> {
-    let pg_settings = inav.get_pg_settings().await.unwrap();
-    let mut setting_ids: Vec<u16> = pg_settings
-        .iter()
-        .flat_map(|pg_s| (pg_s.start_id..=pg_s.end_id).map(u16::from).collect::<Vec<u16>>())
-        .collect();
-
-    setting_ids.sort();
-    let setting_info_futures = setting_ids
-        .iter()
-        .map(|id| inav.get_setting_info_by_id(&id));
-    return try_join_all(setting_info_futures).await;
+    return inav.get_setting_infos().await;
 }
 
 async fn upload_aux<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
@@ -1509,22 +1498,6 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
         None => return Err("aborting due to unsupported settings")
     };
 
-    // let mut set_setting_futures = id_buf_valus.iter()
-    //     .map(|(i, v)| inav.set_setting_by_id(i, v))
-    //     .collect::<FuturesUnordered<_>>();
-
-    // loop {
-    //     match set_setting_futures.next().await {
-    //         Some(Ok(id)) => {
-    //             println!("set {}", setting_list[*id as usize].name);
-    //             // task::sleep(Duration::from_secs(1)).await;
-    //         },
-    //         Some(Err(e)) => return Err(e),
-    //         None => return Ok(()),
-    //     }
-    // }
-
-
     for (i,v) in id_buf_valus {
         println!("set {}", setting_list[*i as usize].name);
         &inav.set_setting_by_id(i, &v).await.unwrap();
@@ -1545,19 +1518,15 @@ async fn upload_common_settings_by_name<'a>(inav: &'a INavMsp, values: Vec<Strin
         });
 
     println!("describing settings by name");
-    let mut setting_infos = vec![];
-    for name in set_settings_hash_map.keys() {
-        match inav.get_setting_info_by_name(&name).await {
-            Ok(info) => setting_infos.push(info),
-            Err(e) => {
-                eprintln!("setting {} is unsupported {}", name, e);
-                if strict {
-                    return Err("some setting is unsupported");
-                }
-            }
+
+    let names = set_settings_hash_map.keys().collect::<Vec<&String>>();
+    let setting_infos = inav.get_setting_infos_by_names(names).await?;
+
+    if setting_infos.len() < set_settings_hash_map.keys().len() {
+        if strict {
+            return Err("failed to configure some setting");
         };
     }
-    println!("done describing");
 
     for info in setting_infos {
         let val = set_settings_hash_map.get(&info.name).unwrap();
