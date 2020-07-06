@@ -1182,33 +1182,106 @@ impl INavMsp {
     }
 
     pub async fn get_setting_info_by_name(&self, name: &str) -> Result<SettingInfo, &str> {
-        let mut payload = name.as_bytes().to_vec();
-        payload.push(b'\0');
-
-        return self.get_setting_info(payload).await;
+        self.request_setting_info_by_name(name).await?;
+        return Ok(self.receive_setting_info().await?);
     }
 
     pub async fn get_setting_info_by_id(&self, id: &u16) -> Result<SettingInfo, &str> {
-        // then we can use MSP2_COMMON_SETTING to get the setting element count
-        // if Payload starts with a zero '\0', then it will treat next u16 bytes as setting index
-        // then we info where to find the setting in the setting table
-        let payload = MspSettingInfoRequest {
-            null: 0,
-            id: *id
-        };
-
-        return self.get_setting_info(payload.pack().to_vec()).await;
+        self.request_setting_info_by_id(id).await?;
+        return Ok(self.receive_setting_info().await?);
     }
 
-    pub async fn get_setting_info(&self, id: Vec<u8>) -> Result<SettingInfo, &str> {
+    // TODO: return iteratable stream here
+    /// request_buffering may increase the fetching speed but if flight controller can't handle it
+    /// it will not return response and decrease reliabilty, request buffer of 1 is good for most cases
+    pub async fn get_setting_infos(&self, request_buffering: usize) -> Result<Vec<SettingInfo>, &str> {
+        println!("describe pg groups"); // TODO: write in debug flag
+        let pg_settings = self.get_pg_settings().await?;
+
+        println!("found {} groups", pg_settings.len());
+        let setting_ids: Vec<u16> = pg_settings
+            .iter()
+            .flat_map(|pg_s| (pg_s.start_id..=pg_s.end_id).map(u16::from).collect::<Vec<u16>>())
+            .collect();
+
+        let mut id_iter = setting_ids.iter();
+        let mut setting_infos = vec![];
+
+        for _ in 0..request_buffering {
+            // keep back preassure of 1
+            let id = id_iter.next().unwrap();
+            self.request_setting_info_by_id(id).await?;
+        }
+
+        for id in id_iter {
+            self.request_setting_info_by_id(id).await?;
+            let info = self.receive_setting_info().await?;
+            setting_infos.push(info);
+        }
+
+        // read the last back preassure
+        for _ in 0..request_buffering {
+            let info = self.receive_setting_info().await?;
+            setting_infos.push(info);
+        }
+
+        return Ok(setting_infos);
+    }
+
+    // TODO: return iteratable stream here
+    pub async fn get_setting_infos_by_names(&self, names: Vec<&String>, request_buffering: usize) -> Result<Vec<SettingInfo>, &str> {
+        let mut name_iter = names.iter();
+        let mut setting_infos = vec![];
+
+        for _ in 0..request_buffering {
+            let name = name_iter.next().unwrap();
+            self.request_setting_info_by_name(name).await?;
+        }
+
+        for name in name_iter {
+            self.request_setting_info_by_name(name).await?;
+            let info = match self.receive_setting_info().await {
+                Ok(i) => i,
+                Err(_) => continue,
+            };
+            setting_infos.push(info);
+        }
+
+        // read the last back preassure
+        for _ in 0..request_buffering {
+            let info = self.receive_setting_info().await?;
+            setting_infos.push(info);
+        }
+
+        return Ok(setting_infos);
+    }
+
+    async fn request_setting_info_by_id(&self, id: &u16) -> Result<(), &str> {
+        let payload = MspSettingInfoRequest {
+            null: 0,
+            id: *id,
+        };
+
+        return self.request_setting_info(payload.pack().to_vec()).await;
+    }
+
+    async fn request_setting_info_by_name(&self, name: &str) -> Result<(), &str> {
+        let mut payload = name.as_bytes().to_vec();
+        payload.push(b'\0');
+        return self.request_setting_info(payload).await;
+    }
+
+    async fn request_setting_info(&self, id: Vec<u8>) -> Result<(), &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_COMMON_SETTING_INFO as u16,
             direction: MspPacketDirection::ToFlightController,
             data: id,
         };
 
-        self.core.write(packet).await;
+        return Ok(self.core.write(packet).await);
+    }
 
+    async fn receive_setting_info(&self) -> Result<SettingInfo, &str> {
         let payload = match self.setting_info.1.recv().await.unwrap() {
             Ok(r) => r,
             Err(_) => return Err("failed to get setting info"),
