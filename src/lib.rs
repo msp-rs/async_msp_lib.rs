@@ -269,8 +269,8 @@ impl INavMsp {
     }
 
     // TODO: If serial-port rs supports standard read write interface we should use this instead of seril explocitly
-    pub fn start(&self, serial: Box<dyn SerialPort>) {
-        &self.core.start(serial);
+    pub fn start(&self, serial: Box<dyn SerialPort>, write_delay: Duration) {
+        &self.core.start(serial, write_delay);
 
         INavMsp::process_route(
             self.core.clone(),

@@ -27,7 +27,7 @@ impl Core {
     /// Create new core msp reader and parser
     pub fn new() -> Core {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
-        let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1);
+        let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1024);
 
         let parser = MspParser::new();
         let parser_locked = Arc::new(Mutex::new(parser));
@@ -41,12 +41,12 @@ impl Core {
         };
 	  }
 
-    pub fn start(&self, serial: Box<dyn SerialPort>) {
+    pub fn start(&self, serial: Box<dyn SerialPort>, msp_write_delay: Duration) {
         serial.clear(serialport::ClearBuffer::All).unwrap();
         let serial_clone = serial.try_clone().unwrap();
 
         Core::process_input(serial, self.parser_locked.clone(), self.msp_reader_send.clone());
-        Core::process_output(serial_clone, self.msp_writer_recv.clone());
+        Core::process_output(serial_clone, self.msp_writer_recv.clone(), msp_write_delay);
     }
 
     pub async fn read(&self) -> std::option::Option<MspPacket> {
@@ -78,6 +78,7 @@ impl Core {
                 let mut serial_buf: Vec<u8> = vec![0; 0x1000];
                 match serial.read(serial_buf.as_mut_slice()) {
                     Ok(bytes) => {
+                        // println!("bytes: {}", bytes);
                         for n in 0..bytes {
                             match (*parser_locked.lock().await).parse(serial_buf[n]) {
                                 Ok(Some(p)) => {
@@ -101,6 +102,7 @@ impl Core {
     fn process_output(
         mut serial: Box<dyn SerialPort>,
         msp_writer_recv: Receiver<MspPacket>,
+        write_delay: Duration,
     ) {
         task::spawn(async move {
             loop {
@@ -120,18 +122,18 @@ impl Core {
                 // because inav doesn't support uart flow control, we simply try write untill success
                 loop {
                     match serial.write(&output) {
-                        Ok(_) => {
-                            task::sleep(Duration::from_millis(10)).await; // match the inav msp loop of 100hz
-                            break
-                        },
+                        Ok(_) => break,
                         Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
                             // controller is busy/serial buffer is full, sleep and attempt write again
                             // println!("write timeout, retrying");
+                            task::sleep(Duration::from_millis(1)).await;
                         }
                         Err(e) => eprintln!("failed to write{:?}", e),
                     }
+                }
 
-                    task::sleep(Duration::from_millis(10)).await; // match the inav msp loop of 100hz
+                if write_delay > Duration::from_millis(0) {
+                    task::sleep(write_delay).await;
                 }
             }
         });
