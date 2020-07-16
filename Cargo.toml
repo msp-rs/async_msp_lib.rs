@@ -19,7 +19,7 @@ packed_struct = "0.3"
 packed_struct_codegen = "0.3"
 
 [dependencies.async-std]
-version = "=1.5.0"
+version = "=1.6.1"
 features = ["unstable", "attributes"]
 
 [features]

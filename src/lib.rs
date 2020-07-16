@@ -144,8 +144,8 @@ impl FlashDataFile {
             // resend the packet
             if timeout_res.is_ok() {
                 match timeout_res.unwrap() {
-                    None => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
-                    Some(payload) => {
+                    Err(_) => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
+                    Ok(payload) => {
                         let packet = INavMsp::parse_chunk(payload.unwrap());
 
                         if packet.read_address >= self.next_address {
@@ -524,8 +524,8 @@ impl INavMsp {
                 }
 
                 match timeout_res.unwrap() {
-                    None => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
-                    Some(payload) => {
+                    Err(_) => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
+                    Ok(payload) => {
                         let packet = INavMsp::parse_chunk(payload.unwrap());
 
                         let idx = match expected_address.binary_search(&(packet.read_address as usize)) {
