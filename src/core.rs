@@ -51,8 +51,8 @@ impl Core {
 
     pub async fn read(&self) -> std::option::Option<MspPacket> {
         return match self.msp_reader_recv.recv().await {
-            None => None,
-            Some(packet) => Some(packet),
+            Err(_) => None,
+            Ok(packet) => Some(packet),
         };
     }
 
@@ -107,8 +107,8 @@ impl Core {
         task::spawn(async move {
             loop {
                 let packet = match msp_writer_recv.recv().await {
-                    None => break,
-                    Some(packet) => packet,
+                    Err(_) => break,
+                    Ok(packet) => packet,
                 };
 
                 let size = packet.packet_size_bytes_v2();
