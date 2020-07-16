@@ -6,7 +6,7 @@ extern crate packed_struct;
 use multiwii_serial_protocol_v2::{MspPacket, MspParser};
 use serialport::SerialPort;
 
-use async_std::sync::{channel, Arc, Mutex, Sender, Receiver};
+use async_std::sync::{channel, Arc, Condvar, Mutex, Sender, Receiver};
 use async_std::{io, task};
 
 use std::time::Duration;
@@ -41,12 +41,14 @@ impl Core {
         };
 	  }
 
-    pub fn start(&self, serial: Box<dyn SerialPort>, msp_write_delay: Duration) {
+    pub fn start(&self, serial: Box<dyn SerialPort>, msp_write_delay: Duration, buffer_size: usize) {
         serial.clear(serialport::ClearBuffer::All).unwrap();
         let serial_clone = serial.try_clone().unwrap();
+        let serial_write_lock = Arc::new((Mutex::new(buffer_size), Condvar::new()));
+        let serial_write_lock_clone = serial_write_lock.clone();
 
-        Core::process_input(serial, self.parser_locked.clone(), self.msp_reader_send.clone());
-        Core::process_output(serial_clone, self.msp_writer_recv.clone(), msp_write_delay);
+        Core::process_input(serial, self.parser_locked.clone(), self.msp_reader_send.clone(), serial_write_lock);
+        Core::process_output(serial_clone, self.msp_writer_recv.clone(), msp_write_delay, serial_write_lock_clone);
     }
 
     pub async fn read(&self) -> std::option::Option<MspPacket> {
@@ -67,13 +69,20 @@ impl Core {
     fn process_input(
         mut serial: Box<dyn SerialPort>,
         parser_locked: Arc<Mutex<MspParser>>,
-        msp_reader_send: Sender<MspPacket>
+        msp_reader_send: Sender<MspPacket>,
+        serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
     ) -> Arc<AtomicBool> {
+        // TODO: remove the should stop, once this object gets dropped, this will stop
         let should_stop = Arc::new(AtomicBool::new(false));
         let should_stop_clone = should_stop.clone();
 
         // task 1: read into input channel from serial(reading from serial is blocking)
         task::spawn(async move {
+            let (lock, cvar) = &*serial_write_lock;
+            let initial_lock = lock.lock().await;
+            let initial_buffer_size = *initial_lock;
+            drop(initial_lock);
+
             while should_stop.load(Ordering::Relaxed) == false {
                 let mut serial_buf: Vec<u8> = vec![0; 0x1000];
                 match serial.read(serial_buf.as_mut_slice()) {
@@ -84,6 +93,14 @@ impl Core {
                                 Ok(Some(p)) => {
                                     // println!("reading");
                                     msp_reader_send.send(p).await;
+
+                                    // lock the condvar here and update to true, and decrement the sent packets count
+                                    let mut received_lock = lock.lock().await;
+                                    if *received_lock < initial_buffer_size {
+                                        *received_lock += 1;
+                                        // We notify the condvar that the value has changed.
+                                        cvar.notify_one();
+                                    }
                                 },
                                 Err(e) => eprintln!("bad crc {:?}", e),
                                 Ok(None) => ()
@@ -103,9 +120,24 @@ impl Core {
         mut serial: Box<dyn SerialPort>,
         msp_writer_recv: Receiver<MspPacket>,
         write_delay: Duration,
+        serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
     ) {
         task::spawn(async move {
+            let (lock, cvar) = &*serial_write_lock;
+
             loop {
+                // lock here counter for sent packets
+                // if counter is more then buffer size(10), lock then 10 turn the value to false and continue the loop
+                // essentially waiting for value to change
+                let guard = cvar.wait_until(lock.lock().await, |send_count| {
+                    if *send_count > 0 {
+                        *send_count -=1;
+                        return true;
+                    }
+
+                    return false;
+                }).await;
+                drop(guard);
                 let packet = match msp_writer_recv.recv().await {
                     Err(_) => break,
                     Ok(packet) => packet,
@@ -128,12 +160,17 @@ impl Core {
                             // println!("write timeout, retrying");
                             task::sleep(Duration::from_millis(1)).await;
                         }
-                        Err(e) => eprintln!("failed to write{:?}", e),
+                        Err(e) => {
+                            *(lock.lock().await) += 1;
+                            eprintln!("failed to write{:?}", e);
+                        }
                     }
                 }
 
                 if write_delay > Duration::from_millis(0) {
                     task::sleep(write_delay).await;
+                } else {
+                    task::yield_now().await;
                 }
             }
         });
