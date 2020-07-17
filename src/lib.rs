@@ -13,6 +13,7 @@ use async_std::{io, task};
 use async_std::future;
 use std::time::Duration;
 use std::convert::TryInto;
+use futures::future::try_join_all;
 
 mod core;
 
@@ -1194,7 +1195,7 @@ impl INavMsp {
     // TODO: return iteratable stream here
     /// request_buffering may increase the fetching speed but if flight controller can't handle it
     /// it will not return response and decrease reliabilty, request buffer of 1 is good for most cases
-    pub async fn get_setting_infos(&self, request_buffering: usize) -> Result<Vec<SettingInfo>, &str> {
+    pub async fn get_setting_infos(&self) -> Result<Vec<SettingInfo>, &str> {
         println!("describe pg groups"); // TODO: write in debug flag
         let pg_settings = self.get_pg_settings().await?;
 
@@ -1204,56 +1205,20 @@ impl INavMsp {
             .flat_map(|pg_s| (pg_s.start_id..=pg_s.end_id).map(u16::from).collect::<Vec<u16>>())
             .collect();
 
-        let mut id_iter = setting_ids.iter();
-        let mut setting_infos = vec![];
+        let setting_info_futures = setting_ids
+            .iter()
+            .map(|id| self.get_setting_info_by_id(&id));
 
-        for _ in 0..request_buffering {
-            // keep back preassure of 1
-            let id = id_iter.next().unwrap();
-            self.request_setting_info_by_id(id).await?;
-        }
-
-        for id in id_iter {
-            self.request_setting_info_by_id(id).await?;
-            let info = self.receive_setting_info().await?;
-            setting_infos.push(info);
-        }
-
-        // read the last back preassure
-        for _ in 0..request_buffering {
-            let info = self.receive_setting_info().await?;
-            setting_infos.push(info);
-        }
-
-        return Ok(setting_infos);
+        return try_join_all(setting_info_futures).await;
     }
 
     // TODO: return iteratable stream here
-    pub async fn get_setting_infos_by_names(&self, names: Vec<&String>, request_buffering: usize) -> Result<Vec<SettingInfo>, &str> {
-        let mut name_iter = names.iter();
-        let mut setting_infos = vec![];
+    pub async fn get_setting_infos_by_names(&self, names: Vec<&String>) -> Result<Vec<SettingInfo>, &str> {
+        let setting_info_futures = names
+            .iter()
+            .map(|name| self.get_setting_info_by_name(&name));
 
-        for _ in 0..request_buffering {
-            let name = name_iter.next().unwrap();
-            self.request_setting_info_by_name(name).await?;
-        }
-
-        for name in name_iter {
-            self.request_setting_info_by_name(name).await?;
-            let info = match self.receive_setting_info().await {
-                Ok(i) => i,
-                Err(_) => continue,
-            };
-            setting_infos.push(info);
-        }
-
-        // read the last back preassure
-        for _ in 0..request_buffering {
-            let info = self.receive_setting_info().await?;
-            setting_infos.push(info);
-        }
-
-        return Ok(setting_infos);
+        return try_join_all(setting_info_futures).await;
     }
 
     async fn request_setting_info_by_id(&self, id: &u16) -> Result<(), &str> {
