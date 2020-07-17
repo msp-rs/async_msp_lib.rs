@@ -17,6 +17,7 @@ multiwii_serial_protocol_v2 = "0.1.11"
 serialport = "3.3.0"
 packed_struct = "0.3"
 packed_struct_codegen = "0.3"
+futures = "0.3.4"
 
 [dependencies.async-std]
 version = "=1.6.1"
