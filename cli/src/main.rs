@@ -334,7 +334,7 @@ async fn main() {
 
     // green-thread 1: read into input channel from serial(reading from serial is blocking)
     let inav = INavMsp::new();
-    inav.start(serialport);
+    inav.start(serialport, Duration::from_millis(0), 3);
 
     match matches.subcommand() {
         ("setting", Some(setting_matches)) => {
