@@ -1456,6 +1456,13 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
             acc
         });
 
+    let setting_list_absolute_index_vals = setting_list
+        .iter()
+        .fold(HashMap::new(), |mut acc, s| {
+            acc.insert(s.info.absolute_index, s);
+            acc
+        });
+
     // parse all values to (name, val)
     let set_settings_list = values.iter().map(|v| {
         println!("parsing {}", v);
@@ -1499,7 +1506,7 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
     };
 
     for (i,v) in id_buf_valus {
-        println!("set {}", setting_list[*i as usize].name);
+        println!("set {}", setting_list_absolute_index_vals.get(i).unwrap().name);
         &inav.set_setting_by_id(i, &v).await.unwrap();
     }
     return Ok(());
