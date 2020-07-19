@@ -1505,11 +1505,17 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
         None => return Err("aborting due to unsupported settings")
     };
 
-    for (i,v) in id_buf_valus {
-        println!("set {}", setting_list_absolute_index_vals.get(i).unwrap().name);
-        &inav.set_setting_by_id(i, &v).await.unwrap();
+    let mut set_setting_futures = id_buf_valus.iter()
+        .map(|(i, v)| inav.set_setting_by_id(i, v))
+        .collect::<FuturesUnordered<_>>();
+
+    loop {
+        match set_setting_futures.next().await {
+            Some(Ok(id)) => println!("set {}", setting_list_absolute_index_vals.get(id).unwrap().name),
+            Some(Err(e)) => return Err(e),
+            None => return Ok(()),
+        }
     }
-    return Ok(());
 }
 
 async fn upload_common_settings_by_name<'a>(inav: &'a INavMsp, values: Vec<String>, strict: bool) -> Result<(), &'a str> {
