@@ -88,9 +88,9 @@ dependencies = [
 
 [[package]]
 name = "async_msp_lib"
-version = "0.1.10"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be6ee48388801918a2912cf003d31cf6ed2ca5a5a574ef1ad43908ca94fd705f"
+checksum = "b32b1a3604f468c8f346441f7f579cfefe814f00ad993da94360e148058fcd92"
 dependencies = [
  "async-std",
  "futures",
