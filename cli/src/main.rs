@@ -268,6 +268,13 @@ async fn main() {
                 .case_insensitive(true)
                 .required(false)
         )
+        .arg(
+            Arg::with_name("buff")
+                .short('b')
+                .long("buff")
+                .default_value("2")
+                .required(false)
+        )
         .get_matches();
 
     let is_strict = matches.is_present("strict");
@@ -290,7 +297,7 @@ async fn main() {
         flow_control: serialport::FlowControl::None,
         parity: serialport::Parity::None,
         stop_bits: serialport::StopBits::One,
-        timeout: Duration::from_millis(1),
+        timeout: Duration::from_millis(0),
     };
 
     let port = match matches.value_of("port") {
@@ -314,6 +321,8 @@ async fn main() {
             .clone()
     };
 
+    let buff = usize::from_str(matches.value_of("buff").unwrap()).unwrap();
+
     match matches.subcommand() {
         ("dfu", _) => {
             let msg = "R\n";
@@ -333,7 +342,7 @@ async fn main() {
 
     // green-thread 1: read into input channel from serial(reading from serial is blocking)
     let inav = INavMsp::new();
-    inav.start(serialport, Duration::from_millis(0), 3);
+    inav.start(serialport, Duration::from_millis(0), buff);
 
     match matches.subcommand() {
         ("setting", Some(setting_matches)) => {
