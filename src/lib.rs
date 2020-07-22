@@ -215,6 +215,8 @@ pub struct INavMsp {
     summary: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
     chunk: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
+    reset_conf_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+
     write_eeprom_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 }
 
@@ -264,6 +266,8 @@ impl INavMsp {
 
             summary: channel::<Result<Vec<u8>, ()>>(100),
             chunk: channel::<Result<Vec<u8>, ()>>(4096),
+
+            reset_conf_ack: channel::<Result<Vec<u8>, ()>>(1),
 
             write_eeprom_ack: channel::<Result<Vec<u8>, ()>>(1),
         };
@@ -315,6 +319,8 @@ impl INavMsp {
             self.summary.0.clone(),
             self.chunk.0.clone(),
 
+            self.reset_conf_ack.0.clone(),
+
             self.write_eeprom_ack.0.clone(),
         );
     }
@@ -360,6 +366,8 @@ impl INavMsp {
 
         summary_send: Sender<Result<Vec<u8>, ()>>,
         chunk_send: Sender<Result<Vec<u8>, ()>>,
+
+        reset_conf_ack: Sender<Result<Vec<u8>, ()>>,
 
         write_eeprom_ack: Sender<Result<Vec<u8>, ()>>,
     ) {
@@ -424,6 +432,8 @@ impl INavMsp {
 
                     Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => &summary_send,
                     Some(MspCommandCode::MSP_DATAFLASH_READ) => &chunk_send,
+
+                    Some(MspCommandCode::MSP_RESET_CONF) => &reset_conf_ack,
 
                     Some(MspCommandCode::MSP_EEPROM_WRITE) => &write_eeprom_ack,
 
@@ -1351,6 +1361,20 @@ impl INavMsp {
         };
     }
 
+    pub async fn reset_conf(&self) -> Result<(), &str> {
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_RESET_CONF as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: vec![],
+        };
+
+        self.core.write(packet).await;
+
+        return match self.reset_conf_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to reset eeprom")
+        };
+    }
 
     pub async fn reboot(&self) -> Result<(), &str> {
         let packet = MspPacket {
