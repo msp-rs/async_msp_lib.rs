@@ -51,6 +51,7 @@ smix                            Get all smix setting
 
 config                          Get all configs
                   set           Upload all configs
+                  reset         Reset all configs
 
 reboot                          Reboot the device
 
