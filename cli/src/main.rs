@@ -213,6 +213,10 @@ async fn main() {
                              .about("describe settings by name, can be faster for small amount of settings")
                              .required(false))
                 )
+                .subcommand(
+                    App::new("reset")
+                        .about("Reset all configs")
+                )
         )
         .subcommand(
             App::new("font")
@@ -934,6 +938,9 @@ async fn main() {
                     for d in dump_common_setting(&inav).await.unwrap() {
                         println!("set {}", d);
                     }
+                },
+                ("reset", Some(_)) => {
+                    inav.reset_conf().await.unwrap();
                 },
                 _ => unreachable!(),
             }
