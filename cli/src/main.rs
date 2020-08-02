@@ -295,13 +295,19 @@ async fn main() {
         None => panic!("default value not defined"),
     };
 
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    let serial_timeout = Duration::from_millis(1);
+
+    #[cfg(target_os = "linux")]
+    let serial_timeout = Duration::from_millis(0);
+
     let s = serialport::SerialPortSettings {
         baud_rate: 115200,
         data_bits: serialport::DataBits::Eight,
         flow_control: serialport::FlowControl::None,
         parity: serialport::Parity::None,
         stop_bits: serialport::StopBits::One,
-        timeout: Duration::from_millis(0),
+        timeout: serial_timeout,
     };
 
     let port = match matches.value_of("port") {
