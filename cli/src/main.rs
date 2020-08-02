@@ -53,7 +53,7 @@ pub enum FcFlavor {
 async fn main() {
 
     let matches = App::new("msp")
-        .version("0.1.6")
+        .version("0.1.10")
         .author("Ilya G. <amfernusus@gmail.com>")
         .about("Interact with msp flight controller")
         .subcommand(
