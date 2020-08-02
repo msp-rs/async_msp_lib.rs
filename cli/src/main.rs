@@ -962,7 +962,13 @@ async fn main() {
                     let d = mcm::decoder::MCMDecoder::new(f);
                     let char_pixels = d.decode().await.unwrap();
 
-                    let mut futures = char_pixels
+                    // Upload 2nd page first, so chips supporting just one page
+                    // overwrite page 2 with page 1. Note that this works fine with
+                    // INAV < 2.1 because it will write invalid character data over
+                    // the first pass, but then it will be ovewritten by the first
+                    // 256 characters.
+
+                    let mut futures_page_2 = char_pixels[256..]
                         .iter()
                         .enumerate()
                         .map(|(addr, pixel_char)| inav.write_char(addr, pixel_char.pixels))
@@ -970,7 +976,26 @@ async fn main() {
 
 
                     loop {
-                        match futures.next().await {
+                        match futures_page_2.next().await {
+                            Some(Ok(result)) => println!("wrote char address {}", result + 256),
+                            Some(Err(e)) => {
+                                eprintln!("failed to write some char {}", e);
+                                if is_strict {
+                                    return;
+                                }
+                            },
+                            None => break,
+                        }
+                    }
+
+                    let mut futures_page_1 = char_pixels[..256]
+                        .iter()
+                        .enumerate()
+                        .map(|(addr, pixel_char)| inav.write_char(addr, pixel_char.pixels))
+                        .collect::<FuturesUnordered<_>>();
+
+                    loop {
+                        match futures_page_1.next().await {
                             Some(Ok(result)) => println!("wrote char address {}", result),
                             Some(Err(e)) => {
                                 eprintln!("failed to write some char {}", e);
