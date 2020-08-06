@@ -55,6 +55,11 @@ command = "cross"
 args = ["build", "--target", "x86_64-pc-windows-gnu", "--release"]
 dependencies = ["clean"]
 
+[tasks.release-arm]
+command = "cross"
+args = ["build", "--target", "arm-unknown-linux-musleabihf", "--release"]
+dependencies = ["clean"]
+
 [tasks.dist-folder]
 command = "mkdir"
 args = ["-p", "dist"]
@@ -80,6 +85,11 @@ dependencies = ["clean"]
 [tasks.release-windows-int32]
 command = "cross"
 args = ["build", "--target", "x86_64-pc-windows-gnu", "--release", "--features", "suppport_int32_setting_type"]
+dependencies = ["clean"]
+
+[tasks.release-arm-int32]
+command = "cross"
+args = ["build", "--target", "arm-unknown-linux-musleabihf", "--release", "--features", "suppport_int32_setting_type"]
 dependencies = ["clean"]
 
 [tasks.copy-to-dist-int32]
