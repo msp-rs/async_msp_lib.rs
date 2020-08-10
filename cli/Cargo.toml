@@ -14,9 +14,9 @@ keywords = ["msp", "multiwii", "inav", "betaflight"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-multiwii_serial_protocol_v2 = "0.1.11"
-async_msp_lib = "0.1.11"
-serialport = "3.3.0"
+multiwii_serial_protocol_v2 = "0.1.12"
+async_msp_lib = "0.1.13"
+serialport = { git = "https://github.com/Susurrus/serialport-rs" }
 packed_struct = "0.3"
 packed_struct_codegen = "0.3"
 futures = "0.3.4"
@@ -24,7 +24,8 @@ clap = "3.0.0-beta.1"
 itertools = "0.9.0"
 
 [dependencies.async-std]
-version = "1.6.1"
+git = "https://github.com/async-rs/async-std"
+branch = "1-6-3"
 features = ["unstable", "attributes"]
 
 [features]
