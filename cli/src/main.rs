@@ -4,7 +4,14 @@ extern crate multiwii_serial_protocol_v2;
 
 extern crate serialport;
 
-use serialport::{available_ports, open_with_settings, SerialPortType};
+use serialport::{available_ports, SerialPortType};
+
+#[cfg(unix)]
+use serialport::TTYPort;
+
+#[cfg(windows)]
+use serialport::COMPort;
+
 
 extern crate packed_struct;
 extern crate packed_struct_codegen;
@@ -12,6 +19,7 @@ extern crate packed_struct_codegen;
 use async_std::fs::OpenOptions;
 use async_std::io::{BufReader, BufWriter};
 use async_std::io::prelude::*;
+use std::net::{TcpStream, SocketAddr};
 
 use async_std::prelude::*;
 
@@ -20,6 +28,7 @@ use std::iter::Iterator;
 use std::convert::TryFrom;
 use std::str::FromStr;
 use std::convert::From;
+use std::io::Write;
 use futures::stream::FuturesUnordered;
 use clap::{App, AppSettings, Arg};
 
@@ -28,6 +37,7 @@ use std::collections::HashMap;
 use packed_struct::PrimitiveEnum;
 use async_msp_lib::{INavMsp, SettingInfo};
 use itertools::Itertools;
+
 
 mod mcm;
 
@@ -47,6 +57,61 @@ pub enum FcFlavor {
     INav {vid: u16, pid: u16},
     Basefligth,
     Betaflight,
+}
+
+
+struct ClonableTcpStream(TcpStream);
+
+impl Clone for ClonableTcpStream {
+    fn clone(&self) -> Self {
+        let clone = (*self).0.try_clone().unwrap();
+        return Self(clone);
+    }
+}
+
+impl std::io::Write for ClonableTcpStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        return self.0.write(buf);
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        return self.0.flush();
+    }
+}
+
+impl std::io::Read for ClonableTcpStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        return self.0.read(buf);
+    }
+}
+
+#[cfg(unix)]
+struct ClonableSerialPort(TTYPort);
+
+#[cfg(windows)]
+struct ClonableSerialPort(COMPort);
+
+impl Clone for ClonableSerialPort {
+    fn clone(&self) -> Self {
+        let clone = self.0.try_clone_native().unwrap();
+        return Self(clone);
+    }
+}
+
+impl std::io::Write for ClonableSerialPort {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        return self.0.write(buf);
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        return self.0.flush();
+    }
+}
+
+impl std::io::Read for ClonableSerialPort {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        return self.0.read(buf);
+    }
 }
 
 #[async_std::main]
@@ -281,7 +346,20 @@ async fn main() {
         )
         .get_matches();
 
-    let is_strict = matches.is_present("strict");
+    match matches.subcommand() {
+        ("dfu", _) => {
+            let msg = "R\n";
+            let p = matches.value_of("port").unwrap();
+            let mut port = serialport::new(p, 115_200)
+                .timeout(Duration::from_millis(1))
+                .open_native().expect("Failed to open port");
+
+            port.write_all(msg.as_bytes())
+                .expect("Unable to write bytes.");
+            return;
+        },
+        _ => ()
+    };
 
     let flavor = match matches.value_of("flavor") {
         Some(p) => {
@@ -295,64 +373,9 @@ async fn main() {
         None => panic!("default value not defined"),
     };
 
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
-    let serial_timeout = Duration::from_millis(1);
-
-    #[cfg(target_os = "linux")]
-    let serial_timeout = Duration::from_millis(0);
-
-    let s = serialport::SerialPortSettings {
-        baud_rate: 115200,
-        data_bits: serialport::DataBits::Eight,
-        flow_control: serialport::FlowControl::None,
-        parity: serialport::Parity::None,
-        stop_bits: serialport::StopBits::One,
-        timeout: serial_timeout,
-    };
-
-    let port = match matches.value_of("port") {
-        Some(p) => String::from(p),
-        None => available_ports()
-            .expect("No serial ports")
-            .iter()
-            .find(|p| {
-                match &p.port_type {
-                    SerialPortType::UsbPort(info) => {
-                        match flavor {
-                            FcFlavor::INav {vid, pid} => return info.vid == vid && info.pid == pid,
-                            _ => return false, // TODO: find betafligth and basefligth vid and pid
-                        }
-                    }
-                    _ => return false,
-                }
-            })
-            .expect("No inav serial ports found, please specify manually with -p")
-            .port_name
-            .clone()
-    };
-
+    let is_strict = matches.is_present("strict");
     let buff = usize::from_str(matches.value_of("buff").unwrap()).unwrap();
-
-    match matches.subcommand() {
-        ("dfu", _) => {
-            let msg = "R\n";
-            let mut s = open_with_settings(&port, &s)
-                .expect("Failed to open serial port");
-
-            s.write_all(msg.as_bytes())
-                .expect("Unable to write bytes.");
-            return;
-        },
-        _ => ()
-    }
-
-
-    let serialport = open_with_settings(&port, &s)
-        .expect("Failed to open serial port");
-
-    // green-thread 1: read into input channel from serial(reading from serial is blocking)
-    let inav = INavMsp::new();
-    inav.start(serialport, Duration::from_millis(0), buff);
+    let inav = open_msp(matches.value_of("port"), &flavor, buff);
 
     match matches.subcommand() {
         ("setting", Some(setting_matches)) => {
@@ -1056,6 +1079,7 @@ async fn upload_aux<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str
 
 async fn dump_aux(inav: &INavMsp) -> Result<Vec<String>, &str> {
     let ranges = inav.get_mode_ranges().await?;
+    println!("received all auxes about to print");
     let dump: Vec<String> = ranges
         .iter()
         .enumerate()
@@ -1614,4 +1638,60 @@ async fn dump_common_setting(inav: &INavMsp) -> Result<Vec<String>, &str> {
         .collect();
 
     return Ok(dump);
+}
+
+fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize) -> INavMsp {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    let serial_timeout = Duration::from_millis(1);
+
+    #[cfg(target_os = "linux")]
+    let serial_timeout = Duration::from_millis(0);
+
+    let msp = INavMsp::new(buff);
+
+    match port {
+        Some(p) => {
+            match p.parse::<SocketAddr>() {
+                Ok(sa) =>  {
+                    let stream = ClonableTcpStream(TcpStream::connect(sa).unwrap());
+                    msp.start(stream, Duration::from_millis(0));
+                    return msp;
+                },
+                _ => {
+                    let port = ClonableSerialPort(serialport::new(p, 115_200)
+                        .timeout(serial_timeout)
+                        .open_native().expect("Failed to open port"));
+
+                    msp.start(port, Duration::from_millis(0));
+                    return msp;
+                }
+            }
+        },
+        None => {
+            let port = available_ports()
+                .expect("No serial ports")
+                .iter()
+                .find(|p| {
+                    match &p.port_type {
+                        SerialPortType::UsbPort(info) => {
+                            match flavor {
+                                FcFlavor::INav {vid, pid} => return &info.vid == vid && &info.pid == pid,
+                                _ => return false, // TODO: find betafligth and basefligth vid and pid
+                            }
+                        }
+                        _ => return false,
+                    }
+                })
+                .expect("No inav serial ports found, please specify manually with -p")
+                .port_name
+                .clone();
+
+            let port = ClonableSerialPort(serialport::new(port, 115_200)
+                                          .timeout(serial_timeout)
+                                          .open_native().expect("Failed to open port"));
+
+            msp.start(port, Duration::from_millis(0));
+            return msp;
+        }
+    }
 }
