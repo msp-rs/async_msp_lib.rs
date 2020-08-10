@@ -20,7 +20,8 @@ packed_struct_codegen = "0.3"
 futures = "0.3.4"
 
 [dependencies.async-std]
-version = "=1.6.1"
+git = "https://github.com/async-rs/async-std"
+branch = "1-6-3"
 features = ["unstable", "attributes"]
 
 [features]
