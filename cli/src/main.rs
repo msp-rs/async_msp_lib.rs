@@ -294,6 +294,20 @@ async fn main() {
                 )
         )
         .subcommand(
+            App::new("raw_rc")
+                .about("Raw rc channels")
+                .subcommand(
+                    App::new("set")
+                        .about("Set rc channels")
+                        .setting(AppSettings::ArgRequiredElseHelp)
+                        .arg(Arg::with_name("input").about("channels string").required(true).takes_value(true))
+                )
+                .subcommand(
+                    App::new("pipe")
+                        .about("pipe stdin to rc channels")
+                )
+        )
+        .subcommand(
             App::new("reboot")
                 .about("Reboot the device")
         )
@@ -1028,6 +1042,37 @@ async fn main() {
                             },
                             None => break,
                         }
+                    }
+                },
+                _ => unreachable!(),
+            }
+        }
+        ("raw_rc", Some(raw_rc_matches)) => {
+            match raw_rc_matches.subcommand() {
+                ("set", Some(raw_rc_matches)) => {
+                    let input = raw_rc_matches.value_of("input").unwrap();
+
+                    let channels: Vec<u16> = input
+                        .split('|')
+                        .filter(|l| l.len() > 0)
+                        .map(|val| u16::from_str(val))
+                        .filter_map(Result::ok)
+                        .collect();
+
+                    inav.set_raw_rc(channels).await.unwrap();
+                },
+                ("pipe", Some(_)) => {
+                    let mut lines = BufReader::new(async_std::io::stdin()).lines();
+
+                    while let Some(line) = lines.next().await {
+                        let channels: Vec<u16> = line.unwrap()
+                            .split('|')
+                            .filter(|l| l.len() > 0)
+                            .map(|val| u16::from_str(val))
+                            .filter_map(Result::ok)
+                            .collect();
+
+                        inav.set_raw_rc(channels).await.unwrap();
                     }
                 },
                 _ => unreachable!(),
