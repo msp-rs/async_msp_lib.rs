@@ -212,6 +212,8 @@ pub struct INavMsp {
 
     write_char_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
+    set_raw_rc_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
+
     summary: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
     chunk: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 
@@ -263,6 +265,8 @@ impl INavMsp {
             set_setting_ack: channel::<Result<Vec<u8>, ()>>(100),
 
             write_char_ack: channel::<Result<Vec<u8>, ()>>(100),
+
+            set_raw_rc_ack: channel::<Result<Vec<u8>, ()>>(100),
 
             summary: channel::<Result<Vec<u8>, ()>>(100),
             chunk: channel::<Result<Vec<u8>, ()>>(4096),
@@ -316,6 +320,8 @@ impl INavMsp {
 
             self.write_char_ack.0.clone(),
 
+            self.set_raw_rc_ack.0.clone(),
+
             self.summary.0.clone(),
             self.chunk.0.clone(),
 
@@ -363,6 +369,8 @@ impl INavMsp {
         set_setting_ack: Sender<Result<Vec<u8>, ()>>,
 
         write_char_ack: Sender<Result<Vec<u8>, ()>>,
+
+        set_raw_rc_ack: Sender<Result<Vec<u8>, ()>>,
 
         summary_send: Sender<Result<Vec<u8>, ()>>,
         chunk_send: Sender<Result<Vec<u8>, ()>>,
@@ -429,6 +437,8 @@ impl INavMsp {
                     Some(MspCommandCode::MSP2_COMMON_SET_SETTING) => &set_setting_ack,
 
                     Some(MspCommandCode::MSP_OSD_CHAR_WRITE) => &write_char_ack,
+
+                    Some(MspCommandCode::MSP_SET_RAW_RC) => &set_raw_rc_ack,
 
                     Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => &summary_send,
                     Some(MspCommandCode::MSP_DATAFLASH_READ) => &chunk_send,
@@ -1358,6 +1368,26 @@ impl INavMsp {
         return match self.write_eeprom_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to write to eeprom")
+        };
+    }
+
+    pub async fn set_raw_rc(&self, channels: Vec<u16>) -> Result<(), &str> {
+        let payload = unsafe {
+            use std::slice;
+            slice::from_raw_parts(channels.as_ptr() as *mut u8, channels.len() * 2)
+        };
+
+        let packet = MspPacket {
+            cmd: MspCommandCode::MSP_SET_RAW_RC as u16,
+            direction: MspPacketDirection::ToFlightController,
+            data: payload.to_vec(),
+        };
+
+        self.core.write(packet).await;
+
+        return match self.set_raw_rc_ack.1.recv().await.unwrap() {
+            Ok(_) => Ok(()),
+            Err(_) => Err("failed to write raw rc")
         };
     }
 
