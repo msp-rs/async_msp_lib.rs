@@ -5,7 +5,6 @@ extern crate packed_struct;
 
 use multiwii_serial_protocol_v2::{MspCommandCode, MspPacket, MspPacketDirection};
 use multiwii_serial_protocol_v2::structs::*;
-use serialport::SerialPort;
 use packed_struct::prelude::*;
 
 use async_std::sync::{channel, Sender, Receiver};
@@ -278,8 +277,8 @@ impl INavMsp {
     }
 
     // TODO: If serial-port rs supports standard read write interface we should use this instead of seril explocitly
-    pub fn start(&self, serial: Box<dyn SerialPort>, write_delay: Duration) {
-        &self.core.start(serial, write_delay);
+    pub fn start(&self, stream: impl Send + std::io::Read + std::io::Write + Clone + 'static, write_delay: Duration) {
+        &self.core.start(stream, write_delay);
 
         if &self.core.buff_size() == &0 {
             return;
@@ -390,7 +389,7 @@ impl INavMsp {
                     Some(packet) => packet,
                 };
 
-                // println!("{:?}", packet);
+                // println!("process route");
 
                 let cmd = MspCommandCode::from_primitive(packet.cmd);
                 let packet_length = packet.data.len();

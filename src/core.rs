@@ -4,10 +4,9 @@ extern crate serialport;
 extern crate packed_struct;
 
 use multiwii_serial_protocol_v2::{MspPacket, MspParser};
-use serialport::SerialPort;
 
 use async_std::sync::{channel, Arc, Condvar, Mutex, Sender, Receiver};
-use async_std::{io, task};
+use async_std::task;
 
 use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -43,16 +42,15 @@ impl Core {
         };
 	  }
 
-    pub fn start(&self, serial: Box<dyn SerialPort>, msp_write_delay: Duration) {
-        serial.clear(serialport::ClearBuffer::All).unwrap();
-        let serial_clone = serial.try_clone().unwrap();
+    pub fn start(&self, stream: impl Send + std::io::Read + std::io::Write + Clone + 'static, msp_write_delay: Duration) {
         let serial_write_lock = Arc::new((Mutex::new(self.buff_size.clone()), Condvar::new()));
         let serial_write_lock_clone = serial_write_lock.clone();
 
         if &self.buff_size > &0 {
-            Core::process_input(serial, self.parser_locked.clone(), self.msp_reader_send.clone(), serial_write_lock);
+            let reader = stream.clone();
+            Core::process_input(reader, self.parser_locked.clone(), self.msp_reader_send.clone(), serial_write_lock);
         }
-        Core::process_output(serial_clone, self.msp_writer_recv.clone(), msp_write_delay, serial_write_lock_clone);
+        Core::process_output(stream, self.msp_writer_recv.clone(), msp_write_delay, serial_write_lock_clone);
     }
 
     pub async fn read(&self) -> std::option::Option<MspPacket> {
@@ -71,7 +69,7 @@ impl Core {
     //       and passthorugh to next.
     //       if the stream contained response for command, it will return the read/write function
     fn process_input(
-        mut serial: Box<dyn SerialPort>,
+        mut serial: impl Send + std::io::Read + 'static,
         parser_locked: Arc<Mutex<MspParser>>,
         msp_reader_send: Sender<MspPacket>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
@@ -97,8 +95,9 @@ impl Core {
                             let res = parser.parse(serial_buf[n]);
                             match res {
                                 Ok(Some(p)) => {
-                                    // println!("reading");
+                                    // println!("reading {:?}", p);
                                     msp_reader_send.send(p).await;
+                                    // println!("reading sent to channel");
 
                                     // lock the condvar here and update to true, and decrement the sent packets count
                                     let mut received_lock = lock.lock().await;
@@ -113,7 +112,7 @@ impl Core {
                             }
                         }
                     }
-                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
+                    Err(ref e) if e.kind() == async_std::io::ErrorKind::TimedOut => {
                         // println!("read timeout");
                     }
                     Err(e) => eprintln!("{:?}", e),
@@ -127,7 +126,7 @@ impl Core {
 
     // TODO: return joinhandler, so we can stop the tasks on drop
     fn process_output(
-        mut serial: Box<dyn SerialPort>,
+        mut serial: impl Send + std::io::Write + 'static,
         msp_writer_recv: Receiver<MspPacket>,
         write_delay: Duration,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
@@ -174,14 +173,14 @@ impl Core {
                 loop {
                     match serial.write(&output) {
                         Ok(_) => break,
-                        Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
+                        Err(ref e) if e.kind() == async_std::io::ErrorKind::TimedOut => {
                             // controller is busy/serial buffer is full, sleep and attempt write again
                             // println!("write timeout, retrying");
                             task::yield_now().await;
-                        }
+                        },
                         Err(e) => {
-                            *(lock.lock().await) += 1;
                             eprintln!("failed to write{:?}", e);
+                            *(lock.lock().await) += 1;
                         }
                     }
                 }
