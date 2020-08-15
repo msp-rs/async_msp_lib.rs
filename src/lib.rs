@@ -166,7 +166,7 @@ impl FlashDataFile {
                     }
                 }
             } else {
-                self.core.reset_parser().await;
+                // self.core.reset_parser().await;
             }
         }
     }
@@ -539,7 +539,7 @@ impl INavMsp {
                 let timeout_res = future::timeout(Duration::from_millis(500), self.chunk.1.recv()).await;
 
                 if !timeout_res.is_ok() {
-                    self.core.reset_parser().await;
+                    // self.core.reset_parser().await;
                     // println!("timeout, address left {:?}", expected_address);
                     break;
                 }
@@ -1385,10 +1385,11 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
-        return match self.set_raw_rc_ack.1.recv().await.unwrap() {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to write raw rc")
-        };
+        return Ok(());
+        // return match self.set_raw_rc_ack.1.recv().await.unwrap() {
+        //     Ok(_) => Ok(()),
+        //     Err(_) => Err("failed to write raw rc")
+        // };
     }
 
     pub async fn reset_conf(&self) -> Result<(), &str> {

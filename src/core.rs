@@ -15,8 +15,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone)]
 pub struct Core {
-    parser_locked: Arc<Mutex<MspParser>>,
-
     msp_reader_send: Sender<MspPacket>,
     msp_reader_recv: Receiver<MspPacket>,
     msp_writer_send: Sender<MspPacket>,
@@ -29,11 +27,7 @@ impl Core {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
         let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1024);
 
-        let parser = MspParser::new();
-        let parser_locked = Arc::new(Mutex::new(parser));
-
         return Core {
-            parser_locked: parser_locked,
             msp_reader_send: msp_reader_send,
             msp_reader_recv: msp_reader_recv,
             msp_writer_send: msp_writer_send,
@@ -47,7 +41,7 @@ impl Core {
         let serial_write_lock = Arc::new((Mutex::new(buffer_size), Condvar::new()));
         let serial_write_lock_clone = serial_write_lock.clone();
 
-        Core::process_input(serial, self.parser_locked.clone(), self.msp_reader_send.clone(), serial_write_lock);
+        Core::process_input(serial, MspParser::new(), self.msp_reader_send.clone(), serial_write_lock);
         Core::process_output(serial_clone, self.msp_writer_recv.clone(), msp_write_delay, serial_write_lock_clone);
     }
 
@@ -68,7 +62,7 @@ impl Core {
     //       if the stream contained response for command, it will return the read/write function
     fn process_input(
         mut serial: Box<dyn SerialPort>,
-        parser_locked: Arc<Mutex<MspParser>>,
+        mut parser: MspParser,
         msp_reader_send: Sender<MspPacket>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
     ) -> Arc<AtomicBool> {
@@ -83,13 +77,14 @@ impl Core {
             let initial_buffer_size = *initial_lock;
             drop(initial_lock);
 
-            while should_stop.load(Ordering::Relaxed) == false {
+            // while should_stop.load(Ordering::Relaxed) == false {
+            loop {
                 let mut serial_buf: Vec<u8> = vec![0; 0x1000];
                 match serial.read(serial_buf.as_mut_slice()) {
                     Ok(bytes) => {
                         // println!("bytes: {}", bytes);
                         for n in 0..bytes {
-                            match (*parser_locked.lock().await).parse(serial_buf[n]) {
+                            match parser.parse(serial_buf[n]) {
                                 Ok(Some(p)) => {
                                     // println!("reading");
                                     msp_reader_send.send(p).await;
@@ -109,10 +104,10 @@ impl Core {
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
                         // println!("read timeout");
+                        // task::yield_now().await;
                     }
                     Err(e) => eprintln!("{:?}", e),
                 }
-
                 task::sleep(Duration::from_millis(10)).await;
             }
         });
@@ -162,7 +157,7 @@ impl Core {
                         Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
                             // controller is busy/serial buffer is full, sleep and attempt write again
                             // println!("write timeout, retrying");
-                            task::sleep(Duration::from_millis(1)).await;
+                            // task::sleep(Duration::from_millis(1)).await;
                         }
                         Err(e) => {
                             *(lock.lock().await) += 1;
@@ -171,6 +166,7 @@ impl Core {
                     }
                 }
 
+                // task::sleep(Duration::from_millis(10)).await;
                 if write_delay > Duration::from_millis(0) {
                     task::sleep(write_delay).await;
                 } else {
@@ -180,9 +176,9 @@ impl Core {
         });
 	  }
 
-    pub async fn reset_parser(&self) {
-        (*self.parser_locked.lock().await).reset();
-    }
+    // pub async fn reset_parser(&self) {
+    //     (*self.parser_locked.lock().await).reset();
+    // }
 }
 
 // impl Clone for Core {
