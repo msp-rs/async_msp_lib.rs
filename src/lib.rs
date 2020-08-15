@@ -224,8 +224,8 @@ pub struct INavMsp {
 
 impl INavMsp {
     // Create a new parserSerialPort
-    pub fn new() -> INavMsp {
-        let core = core::Core::new();
+    pub fn new(buff_size: usize) -> INavMsp {
+        let core = core::Core::new(buff_size);
 
         return INavMsp {
             core: core,
@@ -278,8 +278,12 @@ impl INavMsp {
     }
 
     // TODO: If serial-port rs supports standard read write interface we should use this instead of seril explocitly
-    pub fn start(&self, serial: Box<dyn SerialPort>, write_delay: Duration, buffer_size: usize) {
-        &self.core.start(serial, write_delay, buffer_size);
+    pub fn start(&self, serial: Box<dyn SerialPort>, write_delay: Duration) {
+        &self.core.start(serial, write_delay);
+
+        if &self.core.buff_size() == &0 {
+            return;
+        }
 
         INavMsp::process_route(
             self.core.clone(),
@@ -574,6 +578,10 @@ impl INavMsp {
     }
 
     pub async fn flash_summary(&self) -> Result<MspDataFlashSummaryReply, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_DATAFLASH_SUMMARY as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -626,6 +634,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
         return match self.set_mode_range_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set mode range")
@@ -633,6 +645,10 @@ impl INavMsp {
     }
 
     pub async fn get_mode_ranges(&self) -> Result<Vec<MspModeRange>, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_MODE_RANGES as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -686,6 +702,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
         return match self.set_motor_mixer_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set motor mixer")
@@ -693,6 +713,10 @@ impl INavMsp {
     }
 
     pub async fn get_motor_mixers(&self) -> Result<Vec<MspMotorMixer>, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_MOTOR_MIXER as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -735,6 +759,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
         return match self.set_osd_config_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set osd item")
@@ -757,6 +785,11 @@ impl INavMsp {
         };
 
         self.core.write(packet).await;
+
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
         return match self.set_osd_config_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set osd config")
@@ -764,6 +797,10 @@ impl INavMsp {
     }
 
     pub async fn get_osd_settings(&self) -> Result<MspOsdSettings, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_OSD_CONFIG as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -808,6 +845,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
         return match self.set_osd_layout_item_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set osd layout item")
@@ -815,6 +856,10 @@ impl INavMsp {
     }
 
     pub async fn get_osd_layout_count(&self) -> Result<MspOsdLayouts, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_INAV_OSD_LAYOUTS as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -835,6 +880,10 @@ impl INavMsp {
     }
 
     pub async fn get_osd_layout_items(&self, layout_index: u8) -> Result<Vec<MspOsdItemPosition>, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_INAV_OSD_LAYOUTS as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -859,6 +908,10 @@ impl INavMsp {
     }
 
     pub async fn get_osd_layouts(&self) -> Result<Vec<Vec<MspOsdItemPosition>>, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let mut layouts = vec![];
 
         let layout_count = self.get_osd_layout_count().await?;
@@ -891,6 +944,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
         return match self.set_serial_settings_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set serial settings")
@@ -898,6 +955,10 @@ impl INavMsp {
     }
 
     pub async fn get_serial_settings(&self) -> Result<Vec<MspSerialSetting>, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_SERIAL_CONFIG as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -949,6 +1010,9 @@ impl INavMsp {
         };
 
         self.core.write(packet).await;
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
         return match self.set_features_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set features")
@@ -956,6 +1020,10 @@ impl INavMsp {
     }
 
     pub async fn get_features(&self) -> Result<MspFeatures, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_FEATURE as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -994,6 +1062,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
         return match self.set_servo_mix_rules_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set servo mix rule")
@@ -1002,6 +1074,9 @@ impl INavMsp {
 
     /// println!("servo mixers {:?}", inav.get_servo_mix_rules().await);
     pub async fn get_servo_mix_rules(&self) -> Result<Vec<MspServoMixRule>, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SERVO_MIX_RULES as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -1029,6 +1104,9 @@ impl INavMsp {
     }
 
     pub async fn set_servo_mixer(&self, index: u8, servo_rule: MspServoMixer) -> Result<(), &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
         let payload = MspSetServoMixer {
             index: index,
             servo_rule: servo_rule,
@@ -1049,6 +1127,9 @@ impl INavMsp {
     }
 
     pub async fn get_servo_mixer(&self) -> Result<Vec<MspServoMixer>, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_INAV_SERVO_MIXER as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -1089,6 +1170,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
         return match self.set_servo_configs_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set servo config")
@@ -1097,6 +1182,10 @@ impl INavMsp {
 
     /// println!("servo mixers {:?}", inav.get_servo_mix_rules().await);
     pub async fn get_servo_configs(&self) -> Result<Vec<MspServoConfig>, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_SERVO_CONFIGURATIONS as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -1132,6 +1221,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
         return match self.set_rx_map_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed set rx map rules")
@@ -1139,6 +1232,10 @@ impl INavMsp {
     }
 
     pub async fn get_rx_map(&self) -> Result<MspRxMap, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP_RX_MAP as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -1196,6 +1293,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
         return match self.set_setting_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to set setting")
@@ -1203,11 +1304,17 @@ impl INavMsp {
     }
 
     pub async fn get_setting_info_by_name(&self, name: &str) -> Result<SettingInfo, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
         self.request_setting_info_by_name(name).await?;
         return Ok(self.receive_setting_info().await?);
     }
 
     pub async fn get_setting_info_by_id(&self, id: &u16) -> Result<SettingInfo, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
         self.request_setting_info_by_id(id).await?;
         return Ok(self.receive_setting_info().await?);
     }
@@ -1216,6 +1323,10 @@ impl INavMsp {
     /// request_buffering may increase the fetching speed but if flight controller can't handle it
     /// it will not return response and decrease reliabilty, request buffer of 1 is good for most cases
     pub async fn get_setting_infos(&self) -> Result<Vec<SettingInfo>, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         println!("describe pg groups"); // TODO: write in debug flag
         let pg_settings = self.get_pg_settings().await?;
 
@@ -1234,6 +1345,10 @@ impl INavMsp {
 
     // TODO: return iteratable stream here
     pub async fn get_setting_infos_by_names(&self, names: Vec<&String>) -> Result<Vec<SettingInfo>, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
+
         let setting_info_futures = names
             .iter()
             .map(|name| self.get_setting_info_by_name(&name));
@@ -1308,6 +1423,9 @@ impl INavMsp {
     // 2 bytes start of the setting index, this is not a memory
     // 2 bytes last setting index, this is not a memroy
     pub async fn get_pg_settings(&self) -> Result<Vec<MspSettingGroup>, &str> {
+        if &self.core.buff_size() == &0 {
+            return Err("can't read response when buff_size is 0")
+        }
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_COMMON_PG_LIST as u16,
             direction: MspPacketDirection::ToFlightController,
@@ -1350,6 +1468,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
+        if &self.core.buff_size() == &0 {
+            return Ok(addr);
+        }
+
         return match self.write_char_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(addr),
             Err(_) => Err("failed to write char")
@@ -1364,6 +1486,11 @@ impl INavMsp {
         };
 
         self.core.write(packet).await;
+
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
 
         return match self.write_eeprom_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
@@ -1385,6 +1512,10 @@ impl INavMsp {
 
         self.core.write(packet).await;
 
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
+
         return match self.set_raw_rc_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
             Err(_) => Err("failed to write raw rc")
@@ -1399,6 +1530,10 @@ impl INavMsp {
         };
 
         self.core.write(packet).await;
+
+        if &self.core.buff_size() == &0 {
+            return Ok(());
+        }
 
         return match self.reset_conf_ack.1.recv().await.unwrap() {
             Ok(_) => Ok(()),
