@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[derive(Clone)]
 pub struct Core {
     parser_locked: Arc<Mutex<MspParser>>,
+    buff_size: usize,
 
     msp_reader_send: Sender<MspPacket>,
     msp_reader_recv: Receiver<MspPacket>,
@@ -25,7 +26,7 @@ pub struct Core {
 
 impl Core {
     /// Create new core msp reader and parser
-    pub fn new() -> Core {
+    pub fn new(buff_size: usize) -> Core {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
         let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1024);
 
@@ -33,6 +34,7 @@ impl Core {
         let parser_locked = Arc::new(Mutex::new(parser));
 
         return Core {
+            buff_size: buff_size,
             parser_locked: parser_locked,
             msp_reader_send: msp_reader_send,
             msp_reader_recv: msp_reader_recv,
@@ -41,13 +43,15 @@ impl Core {
         };
 	  }
 
-    pub fn start(&self, serial: Box<dyn SerialPort>, msp_write_delay: Duration, buffer_size: usize) {
+    pub fn start(&self, serial: Box<dyn SerialPort>, msp_write_delay: Duration) {
         serial.clear(serialport::ClearBuffer::All).unwrap();
         let serial_clone = serial.try_clone().unwrap();
-        let serial_write_lock = Arc::new((Mutex::new(buffer_size), Condvar::new()));
+        let serial_write_lock = Arc::new((Mutex::new(self.buff_size.clone()), Condvar::new()));
         let serial_write_lock_clone = serial_write_lock.clone();
 
-        Core::process_input(serial, self.parser_locked.clone(), self.msp_reader_send.clone(), serial_write_lock);
+        if &self.buff_size > &0 {
+            Core::process_input(serial, self.parser_locked.clone(), self.msp_reader_send.clone(), serial_write_lock);
+        }
         Core::process_output(serial_clone, self.msp_writer_recv.clone(), msp_write_delay, serial_write_lock_clone);
     }
 
@@ -131,19 +135,28 @@ impl Core {
         task::spawn(async move {
             let (lock, cvar) = &*serial_write_lock;
 
+            let temp_lock_guard = lock.lock().await;
+            let mut should_wait_for_lock = false;
+            if *temp_lock_guard > 0 {
+                should_wait_for_lock = true;
+            }
+            drop(should_wait_for_lock);
             loop {
                 // lock here counter for sent packets
                 // if counter is more then buffer size(10), lock then 10 turn the value to false and continue the loop
                 // essentially waiting for value to change
-                let guard = cvar.wait_until(lock.lock().await, |send_count| {
-                    if *send_count > 0 {
-                        *send_count -=1;
-                        return true;
-                    }
+                if should_wait_for_lock {
+                    let guard = cvar.wait_until(lock.lock().await, |send_count| {
+                        if *send_count > 0 {
+                            *send_count -=1;
+                            return true;
+                        }
 
-                    return false;
-                }).await;
-                drop(guard);
+                        return false;
+                    }).await;
+                    drop(guard);
+                }
+
                 let packet = match msp_writer_recv.recv().await {
                     Err(_) => break,
                     Ok(packet) => packet,
@@ -184,6 +197,10 @@ impl Core {
 
     pub async fn reset_parser(&self) {
         (*self.parser_locked.lock().await).reset();
+    }
+
+    pub fn buff_size(&self) -> usize {
+        self.buff_size
     }
 }
 
