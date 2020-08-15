@@ -88,8 +88,10 @@ impl Core {
                 match serial.read(serial_buf.as_mut_slice()) {
                     Ok(bytes) => {
                         // println!("bytes: {}", bytes);
+                        let mut parser = parser_locked.lock().await;
                         for n in 0..bytes {
-                            match (*parser_locked.lock().await).parse(serial_buf[n]) {
+                            let res = parser.parse(serial_buf[n]);
+                            match res {
                                 Ok(Some(p)) => {
                                     // println!("reading");
                                     msp_reader_send.send(p).await;
@@ -113,7 +115,7 @@ impl Core {
                     Err(e) => eprintln!("{:?}", e),
                 }
 
-                task::sleep(Duration::from_millis(10)).await;
+                task::yield_now().await;
             }
         });
         return should_stop_clone;
@@ -162,7 +164,7 @@ impl Core {
                         Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
                             // controller is busy/serial buffer is full, sleep and attempt write again
                             // println!("write timeout, retrying");
-                            task::sleep(Duration::from_millis(1)).await;
+                            task::yield_now().await;
                         }
                         Err(e) => {
                             *(lock.lock().await) += 1;
@@ -173,9 +175,9 @@ impl Core {
 
                 if write_delay > Duration::from_millis(0) {
                     task::sleep(write_delay).await;
-                } else {
-                    task::yield_now().await;
                 }
+
+                task::yield_now().await;
             }
         });
 	  }
