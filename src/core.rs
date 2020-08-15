@@ -107,9 +107,13 @@ impl Core {
                             }
                         }
                     }
-                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => task::yield_now().await,
+                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
+                        // println!("read timeout");
+                    }
                     Err(e) => eprintln!("{:?}", e),
                 }
+
+                task::sleep(Duration::from_millis(10)).await;
             }
         });
         return should_stop_clone;
