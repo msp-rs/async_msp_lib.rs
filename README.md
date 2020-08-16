@@ -11,7 +11,7 @@ MSP is available on crates.io and can be included in your Cargo enabled project 
 
 ```toml
 [dependencies]
-async_msp_lib = "0.1.12"
+async_msp_lib = "0.1.13"
 ```
 
 Then include it in your code like this:
