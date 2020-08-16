@@ -134,12 +134,13 @@ impl Core {
         task::spawn(async move {
             let (lock, cvar) = &*serial_write_lock;
 
-            let temp_lock_guard = lock.lock().await;
             let mut should_wait_for_lock = false;
+            let temp_lock_guard = lock.lock().await;
             if *temp_lock_guard > 0 {
                 should_wait_for_lock = true;
             }
-            drop(should_wait_for_lock);
+            drop(temp_lock_guard);
+
             loop {
                 // lock here counter for sent packets
                 // if counter is more then buffer size(10), lock then 10 turn the value to false and continue the loop
