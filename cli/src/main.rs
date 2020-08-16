@@ -35,7 +35,7 @@ use clap::{App, AppSettings, Arg};
 use multiwii_serial_protocol_v2::structs::*;
 use std::collections::HashMap;
 use packed_struct::PrimitiveEnum;
-use async_msp_lib::{INavMsp, SettingInfo};
+use async_msp_lib::{Msp, SettingInfo};
 use itertools::Itertools;
 
 
@@ -1094,11 +1094,11 @@ async fn main() {
     }
 }
 
-async fn describe_settings(inav: &INavMsp) -> Result<Vec<SettingInfo>, &str> {
+async fn describe_settings(inav: &Msp) -> Result<Vec<SettingInfo>, &str> {
     return inav.get_setting_infos().await;
 }
 
-async fn upload_aux<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+async fn upload_aux<'a, 'b>(inav: &'a Msp, value: &'b str) -> Result<&'b str, &'a str> {
     let mut split_iter = value.split_whitespace();
     let index = split_iter.next().unwrap();
     let box_id = split_iter.next().unwrap();
@@ -1122,7 +1122,7 @@ async fn upload_aux<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str
     Ok(value)
 }
 
-async fn dump_aux(inav: &INavMsp) -> Result<Vec<String>, &str> {
+async fn dump_aux(inav: &Msp) -> Result<Vec<String>, &str> {
     let ranges = inav.get_mode_ranges().await?;
     println!("received all auxes about to print");
     let dump: Vec<String> = ranges
@@ -1140,7 +1140,7 @@ async fn dump_aux(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_mmix<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+async fn upload_mmix<'a, 'b>(inav: &'a Msp, value: &'b str) -> Result<&'b str, &'a str> {
     let mut split_iter = value.split_whitespace();
     let index = split_iter.next().unwrap();
     let throttle = split_iter.next().unwrap();
@@ -1159,7 +1159,7 @@ async fn upload_mmix<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b st
     Ok(value)
 }
 
-async fn dump_mmix(inav: &INavMsp) -> Result<Vec<String>, &str> {
+async fn dump_mmix(inav: &Msp) -> Result<Vec<String>, &str> {
     let mixers = inav.get_motor_mixers().await?;
     let dump: Vec<String> = mixers
         .iter()
@@ -1175,7 +1175,7 @@ async fn dump_mmix(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_smix<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+async fn upload_smix<'a, 'b>(inav: &'a Msp, value: &'b str) -> Result<&'b str, &'a str> {
     let mut split_iter = value.split_whitespace();
 
     let index = split_iter.next().unwrap();
@@ -1198,7 +1198,7 @@ async fn upload_smix<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b st
     Ok(value)
 }
 
-async fn dump_smix_inav(inav: &INavMsp) -> Result<Vec<String>, &str> {
+async fn dump_smix_inav(inav: &Msp) -> Result<Vec<String>, &str> {
     let mixers = inav.get_servo_mixer().await?;
     let dump: Vec<String> = mixers
         .iter()
@@ -1215,7 +1215,7 @@ async fn dump_smix_inav(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_smix_inav<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+async fn upload_smix_inav<'a, 'b>(inav: &'a Msp, value: &'b str) -> Result<&'b str, &'a str> {
     let mut split_iter = value.split_whitespace();
 
     let index = split_iter.next().unwrap();
@@ -1237,7 +1237,7 @@ async fn upload_smix_inav<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&
     Ok(value)
 }
 
-async fn dump_servo(inav: &INavMsp) -> Result<Vec<String>, &str> {
+async fn dump_servo(inav: &Msp) -> Result<Vec<String>, &str> {
     let servo = inav.get_servo_configs().await?;
     let dump: Vec<String> = servo
         .iter()
@@ -1253,7 +1253,7 @@ async fn dump_servo(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_servo<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+async fn upload_servo<'a, 'b>(inav: &'a Msp, value: &'b str) -> Result<&'b str, &'a str> {
     let mut split_iter = value.split_whitespace();
 
     // servo 0 1200 1950 1490 100
@@ -1278,7 +1278,7 @@ async fn upload_servo<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b s
     Ok(value)
 }
 
-async fn dump_smix(inav: &INavMsp) -> Result<Vec<String>, &str> {
+async fn dump_smix(inav: &Msp) -> Result<Vec<String>, &str> {
     let mixers = inav.get_servo_mix_rules().await?;
     let dump: Vec<String> = mixers
         .iter()
@@ -1295,7 +1295,7 @@ async fn dump_smix(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_map<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+async fn upload_map<'a, 'b>(inav: &'a Msp, value: &'b str) -> Result<&'b str, &'a str> {
     let map_val = match value {
         "TAER" => [1, 2, 3, 0],
         "AETR" => [0, 1, 3, 2],
@@ -1310,7 +1310,7 @@ async fn upload_map<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str
     Ok(value)
 }
 
-async fn dump_map(inav: &INavMsp) -> Result<String, &str> {
+async fn dump_map(inav: &Msp) -> Result<String, &str> {
     let map = inav.get_rx_map().await?;
 
     let map_name = match map.map {
@@ -1322,7 +1322,7 @@ async fn dump_map(inav: &INavMsp) -> Result<String, &str> {
     Ok(map_name.to_owned())
 }
 
-async fn upload_serial<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+async fn upload_serial<'a, 'b>(inav: &'a Msp, value: &'b str) -> Result<&'b str, &'a str> {
     let mut split_iter = value.split_whitespace();
 
     let identifier = split_iter.next().unwrap();
@@ -1345,7 +1345,7 @@ async fn upload_serial<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b 
     Ok(value)
 }
 
-async fn dump_serial(inav: &INavMsp) -> Result<Vec<String>, &str> {
+async fn dump_serial(inav: &Msp) -> Result<Vec<String>, &str> {
     let serials = inav.get_serial_settings().await?;
     let dump: Vec<String> = serials
         .iter()
@@ -1361,7 +1361,7 @@ async fn dump_serial(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_osd_item<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+async fn upload_osd_item<'a, 'b>(inav: &'a Msp, value: &'b str) -> Result<&'b str, &'a str> {
     let mut split_iter = value.split_whitespace();
 
     let item_pos = u8::from_str(split_iter.next().unwrap()).unwrap();
@@ -1386,7 +1386,7 @@ async fn upload_osd_item<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'
     Ok(value)
 }
 
-async fn dump_osd_items(inav: &INavMsp) -> Result<Vec<String>, &str> {
+async fn dump_osd_items(inav: &Msp) -> Result<Vec<String>, &str> {
     let osd = inav.get_osd_settings().await?;
     let dump: Vec<String> = osd.item_positions
         .iter()
@@ -1406,7 +1406,7 @@ async fn dump_osd_items(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_osd_layout_items<'a, 'b>(inav: &'a INavMsp, values: Vec<String>, strict: bool) -> Result<(), &'a str> {
+async fn upload_osd_layout_items<'a, 'b>(inav: &'a Msp, values: Vec<String>, strict: bool) -> Result<(), &'a str> {
     let layout_count = inav.get_osd_layout_count().await?;
     let items: Vec<(String, MspSetOsdLayoutItem)> = values.iter().map(|value| {
         let mut split_iter = value.split_whitespace();
@@ -1477,14 +1477,14 @@ async fn upload_osd_layout_items<'a, 'b>(inav: &'a INavMsp, values: Vec<String>,
     Ok(())
 }
 
-async fn _set_osd_layout_item<'a>(inav: &'a INavMsp, val: &String, item: &MspSetOsdLayoutItem) -> Result<(), &'a str> {
+async fn _set_osd_layout_item<'a>(inav: &'a Msp, val: &String, item: &MspSetOsdLayoutItem) -> Result<(), &'a str> {
     inav.set_osd_layout_item(item.layout_index, item.item).await?;
     println!("osd_layout {}", val);
     Ok(())
 }
 
 // iNav only command
-async fn dump_osd_layouts(inav: &INavMsp) -> Result<Vec<String>, &str> {
+async fn dump_osd_layouts(inav: &Msp) -> Result<Vec<String>, &str> {
     let mut dump = vec![];
 
     let layouts = inav.get_osd_layouts().await?;
@@ -1508,7 +1508,7 @@ async fn dump_osd_layouts(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn enable_feature<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+async fn enable_feature<'a, 'b>(inav: &'a Msp, value: &'b str) -> Result<&'b str, &'a str> {
     let index = FEATURE_NAMES.iter().position(|&n| n == value).unwrap();
     let mut feat = inav.get_features().await.unwrap();
 
@@ -1518,7 +1518,7 @@ async fn enable_feature<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b
     Ok(value)
 }
 
-async fn disable_feature<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'b str, &'a str> {
+async fn disable_feature<'a, 'b>(inav: &'a Msp, value: &'b str) -> Result<&'b str, &'a str> {
     let index = FEATURE_NAMES.iter().position(|&n| n == value).unwrap();
     let mut feat = inav.get_features().await.unwrap();
 
@@ -1528,7 +1528,7 @@ async fn disable_feature<'a, 'b>(inav: &'a INavMsp, value: &'b str) -> Result<&'
     Ok(value)
 }
 
-async fn upload_features<'a, 'b>(inav: &'a INavMsp, values:Vec<&str>) -> Result<(), &'a str> {
+async fn upload_features<'a, 'b>(inav: &'a Msp, values:Vec<&str>) -> Result<(), &'a str> {
     let mut feat = inav.get_features().await.unwrap();
 
     for v in values {
@@ -1545,7 +1545,7 @@ async fn upload_features<'a, 'b>(inav: &'a INavMsp, values:Vec<&str>) -> Result<
     Ok(())
 }
 
-async fn dump_feature(inav: &INavMsp) -> Result<Vec<String>, &str> {
+async fn dump_feature(inav: &Msp) -> Result<Vec<String>, &str> {
     let features = inav.get_features().await?;
     let dump: Vec<String> = features
         .features
@@ -1561,7 +1561,7 @@ async fn dump_feature(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, strict: bool) -> Result<(), &'a str> {
+async fn upload_common_settings<'a>(inav: &'a Msp, values: Vec<String>, strict: bool) -> Result<(), &'a str> {
     println!("describing settings");
     let setting_list = describe_settings(&inav).await.unwrap();
 
@@ -1634,7 +1634,7 @@ async fn upload_common_settings<'a>(inav: &'a INavMsp, values: Vec<String>, stri
     }
 }
 
-async fn upload_common_settings_by_name<'a>(inav: &'a INavMsp, values: Vec<String>, strict: bool) -> Result<(), &'a str> {
+async fn upload_common_settings_by_name<'a>(inav: &'a Msp, values: Vec<String>, strict: bool) -> Result<(), &'a str> {
     let set_settings_hash_map = values
         .iter()
         .fold(HashMap::new(), |mut acc, v| {
@@ -1675,7 +1675,7 @@ async fn upload_common_settings_by_name<'a>(inav: &'a INavMsp, values: Vec<Strin
     Ok(())
 }
 
-async fn dump_common_setting(inav: &INavMsp) -> Result<Vec<String>, &str> {
+async fn dump_common_setting(inav: &Msp) -> Result<Vec<String>, &str> {
     let settings = describe_settings(inav).await?;
     let dump: Vec<String> = settings
         .iter()
@@ -1685,21 +1685,21 @@ async fn dump_common_setting(inav: &INavMsp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize) -> INavMsp {
+fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize) -> Msp {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     let serial_timeout = Duration::from_millis(1);
 
     #[cfg(target_os = "linux")]
     let serial_timeout = Duration::from_millis(0);
 
-    let msp = INavMsp::new(buff);
+    let msp = Msp::new(buff, Duration::from_millis(0), false);
 
     match port {
         Some(p) => {
             match p.parse::<SocketAddr>() {
                 Ok(sa) =>  {
                     let stream = ClonableTcpStream(TcpStream::connect(sa).unwrap());
-                    msp.start(stream, Duration::from_millis(0));
+                    msp.start(stream);
                     return msp;
                 },
                 _ => {
@@ -1707,7 +1707,7 @@ fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize) -> INavMsp {
                         .timeout(serial_timeout)
                         .open_native().expect("Failed to open port"));
 
-                    msp.start(port, Duration::from_millis(0));
+                    msp.start(port);
                     return msp;
                 }
             }
@@ -1735,7 +1735,7 @@ fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize) -> INavMsp {
                                           .timeout(serial_timeout)
                                           .open_native().expect("Failed to open port"));
 
-            msp.start(port, Duration::from_millis(0));
+            msp.start(port);
             return msp;
         }
     }
