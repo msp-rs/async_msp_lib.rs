@@ -65,6 +65,7 @@ FLAGS:
     -h, --help       Prints help information
     -r, --reboot     reboot fc
     -s, --save       settings file path
+    -v, --verbose    display internal message receive and send
         --strict     stop if setting not found in fc
     -V, --version    Prints version information
 ```

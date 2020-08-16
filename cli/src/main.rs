@@ -344,6 +344,13 @@ async fn main() {
                 .required(false)
         )
         .arg(
+            Arg::with_name("verbose")
+                .long("verbose")
+                .short('v')
+                .about("display internal message receive and send")
+                .required(false)
+        )
+        .arg(
             Arg::with_name("flavor")
                 .long("flavor")
                 .possible_values(&["inav", "baseflight", "betafligth"])
@@ -389,7 +396,8 @@ async fn main() {
 
     let is_strict = matches.is_present("strict");
     let buff = usize::from_str(matches.value_of("buff").unwrap()).unwrap();
-    let inav = open_msp(matches.value_of("port"), &flavor, buff);
+    let is_verbose = matches.is_present("verbose");
+    let inav = open_msp(matches.value_of("port"), &flavor, buff, is_verbose);
 
     match matches.subcommand() {
         ("setting", Some(setting_matches)) => {
@@ -1685,14 +1693,14 @@ async fn dump_common_setting(inav: &Msp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize) -> Msp {
+fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize, verbose: bool) -> Msp {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     let serial_timeout = Duration::from_millis(1);
 
     #[cfg(target_os = "linux")]
     let serial_timeout = Duration::from_millis(0);
 
-    let msp = Msp::new(buff, Duration::from_millis(0), false);
+    let msp = Msp::new(buff, Duration::from_millis(0), verbose);
 
     match port {
         Some(p) => {
