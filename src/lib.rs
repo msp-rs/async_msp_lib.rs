@@ -223,8 +223,8 @@ pub struct INavMsp {
 
 impl INavMsp {
     // Create a new parserSerialPort
-    pub fn new(buff_size: usize, write_delay: Duration) -> INavMsp {
-        let core = core::Core::new(buff_size, write_delay);
+    pub fn new(buff_size: usize, write_delay: Duration, verbose: bool) -> INavMsp {
+        let core = core::Core::new(buff_size, write_delay, verbose);
 
         return INavMsp {
             core,
