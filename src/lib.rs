@@ -109,7 +109,7 @@ impl From<&SettingInfo> for String {
                 let (int_bytes, _rest) = s.value.split_at(std::mem::size_of::<f32>());
                 return f32::from_le_bytes(int_bytes.try_into().unwrap()).to_string();
             }
-            SettingType::VarString => INavMsp::str_from_u8_nul_utf8(&s.value).unwrap().to_owned(),
+            SettingType::VarString => Msp::str_from_u8_nul_utf8(&s.value).unwrap().to_owned(),
         }
     }
 }
@@ -146,7 +146,7 @@ impl FlashDataFile {
                 match timeout_res.unwrap() {
                     Err(_) => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
                     Ok(payload) => {
-                        let packet = INavMsp::parse_chunk(payload.unwrap());
+                        let packet = Msp::parse_chunk(payload.unwrap());
 
                         if packet.read_address >= self.next_address {
                             self.received_address = packet.read_address;
@@ -172,7 +172,7 @@ impl FlashDataFile {
 }
 
 // TODO: we should pass by reference in channel, or Vec<u8> reference
-pub struct INavMsp {
+pub struct Msp {
     core: core::Core,
 
     mode_ranges: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
@@ -221,12 +221,12 @@ pub struct INavMsp {
     write_eeprom_ack: (Sender<Result<Vec<u8>, ()>>, Receiver<Result<Vec<u8>, ()>>),
 }
 
-impl INavMsp {
+impl Msp {
     // Create a new parserSerialPort
-    pub fn new(buff_size: usize, write_delay: Duration, verbose: bool) -> INavMsp {
+    pub fn new(buff_size: usize, write_delay: Duration, verbose: bool) -> Msp {
         let core = core::Core::new(buff_size, write_delay, verbose);
 
-        return INavMsp {
+        return Msp {
             core,
 
             mode_ranges: channel::<Result<Vec<u8>, ()>>(100),
@@ -284,7 +284,7 @@ impl INavMsp {
             return;
         }
 
-        INavMsp::process_route(
+        Msp::process_route(
             self.core.clone(),
 
             self.mode_ranges.0.clone(),
@@ -550,7 +550,7 @@ impl INavMsp {
                 match timeout_res.unwrap() {
                     Err(_) => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "device disconnected")),
                     Ok(payload) => {
-                        let packet = INavMsp::parse_chunk(payload.unwrap());
+                        let packet = Msp::parse_chunk(payload.unwrap());
 
                         let idx = match expected_address.binary_search(&(packet.read_address as usize)) {
                             Ok(idx) => idx,
@@ -1386,7 +1386,7 @@ impl INavMsp {
             Err(_) => return Err("failed to get setting info"),
         };
 
-        let name = INavMsp::str_from_u8_nul_utf8(&payload).unwrap();
+        let name = Msp::str_from_u8_nul_utf8(&payload).unwrap();
         let len = MspSettingInfo::packed_bytes();
         let mut index = name.len() + 1;
         let setting_info = MspSettingInfo::unpack_from_slice(&payload[index..index + len]).expect("Failed to parse inavlid msp setting");
@@ -1396,7 +1396,7 @@ impl INavMsp {
         let mut enum_values = vec![];
         if setting_info.setting_mode == SettingMode::ModeLookup {
             for _ in setting_info.min..setting_info.max + 1 {
-                let enum_value = INavMsp::str_from_u8_nul_utf8(&payload[index..]).unwrap();
+                let enum_value = Msp::str_from_u8_nul_utf8(&payload[index..]).unwrap();
                 index += enum_value.len() + 1;
                 enum_values.push(enum_value);
             }
