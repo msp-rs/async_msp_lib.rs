@@ -91,8 +91,9 @@ impl Core {
             let initial_buffer_size = *initial_lock;
             drop(initial_lock);
 
+            let mut serial_buf: Vec<u8> = vec![0; 0x1000];
             while should_stop.load(Ordering::Relaxed) == false {
-                let mut serial_buf: Vec<u8> = vec![0; 0x1000];
+                serial_buf.clear();
                 match serial.read(serial_buf.as_mut_slice()) {
                     Ok(bytes) => {
                         // println!("bytes: {}", bytes);
