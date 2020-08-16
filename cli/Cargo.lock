@@ -96,34 +96,6 @@ dependencies = [
 [[package]]
 name = "async-std"
 version = "1.6.3"
-source = "git+https://github.com/async-rs/async-std?branch=1-6-3#a1e83c182e3906e40eab1948f494f0ad382be9a2"
-dependencies = [
- "async-attributes",
- "async-executor",
- "async-io",
- "async-mutex",
- "async-task",
- "blocking",
- "crossbeam-utils",
- "futures-channel",
- "futures-core",
- "futures-io",
- "futures-lite",
- "futures-timer",
- "kv-log-macro",
- "log",
- "memchr",
- "num_cpus",
- "once_cell",
- "pin-project-lite",
- "pin-utils",
- "slab",
- "wasm-bindgen-futures",
-]
-
-[[package]]
-name = "async-std"
-version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c8da367da62b8ff2313c406c9ac091c1b31d67a165becdd2de380d846260f7"
 dependencies = [
@@ -160,7 +132,7 @@ checksum = "c17772156ef2829aadc587461c7753af20b7e8db1529bc66855add962a3b35d3"
 name = "async_msp_cli"
 version = "0.1.10"
 dependencies = [
- "async-std 1.6.3 (git+https://github.com/async-rs/async-std?branch=1-6-3)",
+ "async-std",
  "async_msp_lib",
  "clap",
  "futures",
@@ -177,7 +149,7 @@ version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ddd3dd5de22eb66ab41c2d9adbc5ab092865bb608bf0f3b80a899760a780e19"
 dependencies = [
- "async-std 1.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "async-std",
  "futures",
  "multiwii_serial_protocol_v2",
  "packed_struct",
