@@ -8,13 +8,15 @@ use multiwii_serial_protocol_v2::{MspPacket, MspParser};
 use async_std::sync::{channel, Arc, Condvar, Mutex, Sender, Receiver};
 use async_std::task;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::VecDeque;
 
 
 #[derive(Clone)]
 pub struct Core {
     parser_locked: Arc<Mutex<MspParser>>,
+    verbose: bool,
     buff_size: usize,
     msp_write_delay: Duration,
 
@@ -26,7 +28,7 @@ pub struct Core {
 
 impl Core {
     /// Create new core msp reader and parser
-    pub fn new(buff_size: usize, msp_write_delay: Duration) -> Core {
+    pub fn new(buff_size: usize, msp_write_delay: Duration, verbose: bool) -> Core {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
         let write_buff_size = match buff_size {
             0 => 1,
@@ -40,6 +42,7 @@ impl Core {
         return Core {
             buff_size,
             msp_write_delay,
+            verbose,
             parser_locked,
             msp_reader_send,
             msp_reader_recv,
@@ -52,11 +55,14 @@ impl Core {
         let serial_write_lock = Arc::new((Mutex::new(self.buff_size.clone()), Condvar::new()));
         let serial_write_lock_clone = serial_write_lock.clone();
 
+        let elapsed_queue_lock = Arc::new(Mutex::new(VecDeque::with_capacity(self.buff_size.clone())));
+        let elapsed_queue_lock_clone = elapsed_queue_lock.clone();
+
         if &self.buff_size > &0 {
             let reader = stream.clone();
-            Core::process_input(reader, self.parser_locked.clone(), self.msp_reader_send.clone(), serial_write_lock);
+            Core::process_input(reader, self.parser_locked.clone(), self.msp_reader_send.clone(), serial_write_lock, elapsed_queue_lock, self.verbose.clone());
         }
-        Core::process_output(stream, self.msp_writer_recv.clone(), self.msp_write_delay.clone(), serial_write_lock_clone);
+        Core::process_output(stream, self.msp_writer_recv.clone(), serial_write_lock_clone, self.msp_write_delay.clone(), elapsed_queue_lock_clone, self.verbose.clone());
     }
 
     pub async fn read(&self) -> std::option::Option<MspPacket> {
@@ -79,6 +85,8 @@ impl Core {
         parser_locked: Arc<Mutex<MspParser>>,
         msp_reader_send: Sender<MspPacket>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
+        elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
+        verbose: bool,
     ) -> Arc<AtomicBool> {
         // TODO: remove the should stop, once this object gets dropped, this will stop
         let should_stop = Arc::new(AtomicBool::new(false));
@@ -96,15 +104,20 @@ impl Core {
                 serial_buf.clear();
                 match serial.read(serial_buf.as_mut_slice()) {
                     Ok(bytes) => {
-                        // println!("bytes: {}", bytes);
                         let mut parser = parser_locked.lock().await;
                         for n in 0..bytes {
                             let res = parser.parse(serial_buf[n]);
                             match res {
                                 Ok(Some(p)) => {
-                                    // println!("reading {:?}", p);
+                                    if verbose {
+                                        println!("receive new msp packet {}", p.cmd);
+                                        match (*elapsed_queue_lock.lock().await).pop_front() {
+                                            Some(instant) => println!("elapsed time since send {}", instant.elapsed().subsec_millis()),
+                                            None => (),
+                                        };
+                                    }
+
                                     msp_reader_send.send(p).await;
-                                    // println!("reading sent to channel");
 
                                     // lock the condvar here and update to true, and decrement the sent packets count
                                     let mut received_lock = lock.lock().await;
@@ -120,7 +133,9 @@ impl Core {
                         }
                     }
                     Err(ref e) if e.kind() == async_std::io::ErrorKind::TimedOut => {
-                        // println!("read timeout");
+                        if verbose {
+                            println!("read timeout");
+                        }
                     }
                     Err(e) => eprintln!("{:?}", e),
                 }
@@ -135,8 +150,10 @@ impl Core {
     fn process_output(
         mut serial: impl Send + std::io::Write + 'static,
         msp_writer_recv: Receiver<MspPacket>,
-        write_delay: Duration,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
+        write_delay: Duration,
+        elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
+        verbose: bool,
     ) {
         task::spawn(async move {
             let (lock, cvar) = &*serial_write_lock;
@@ -173,14 +190,22 @@ impl Core {
                     .serialize_v2(&mut output)
                     .expect("Failed to serialize");
 
-                // println!("writing {:?}", packet);
+                if verbose {
+                    println!("writing {}", packet.cmd);
+                }
+
                 // because inav doesn't support uart flow control, we simply try write untill success
                 loop {
                     match serial.write(&output) {
-                        Ok(_) => break,
+                        Ok(_) => {
+                            if verbose && should_wait_for_lock {
+                                (*elapsed_queue_lock.lock().await).push_back(Instant::now());
+                            }
+
+                            break;
+                        },
                         Err(ref e) if e.kind() == async_std::io::ErrorKind::TimedOut => {
                             // controller is busy/serial buffer is full, sleep and attempt write again
-                            // println!("write timeout, retrying");
                             task::yield_now().await;
                         },
                         Err(e) => {
@@ -207,15 +232,3 @@ impl Core {
         self.buff_size
     }
 }
-
-// impl Clone for Core {
-//     fn clone(&self) -> Self {
-//         return Core {
-//             parser_locked: self.parser_locked.clone(),
-//             msp_reader_send: self.msp_reader_send.clone(),
-//             msp_reader_recv: self.msp_reader_recv.clone(),
-//             msp_writer_send: self.msp_writer_send.clone(),
-//             msp_writer_recv: self.msp_writer_recv.clone(),
-//         };
-//     }
-// }
