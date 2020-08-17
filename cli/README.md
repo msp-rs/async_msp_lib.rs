@@ -63,10 +63,13 @@ OPTIONS:
 
 FLAGS:
     -h, --help       Prints help information
-    -r, --reboot     reboot fc
-    -s, --save       settings file path
+    -r, --reboot     Reboot fc
+    -s, --save       Settings file path
+        --strict     Stop if setting not found in fc
     -v, --verbose    display internal message receive and send
-        --strict     stop if setting not found in fc
+    -b  --buff       Max amount of msp messages can be sent without receiving response,
+                     essentially buffering the msp write.
+                     setting the buffer to 0 will make the communication unidirectional, only writes
     -V, --version    Prints version information
 ```
 
