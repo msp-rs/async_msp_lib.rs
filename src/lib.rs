@@ -223,8 +223,8 @@ pub struct INavMsp {
 
 impl INavMsp {
     // Create a new parserSerialPort
-    pub fn new(buff_size: usize) -> INavMsp {
-        let core = core::Core::new(buff_size);
+    pub fn new(buff_size: usize, write_delay: Duration) -> INavMsp {
+        let core = core::Core::new(buff_size, write_delay);
 
         return INavMsp {
             core,
@@ -277,8 +277,8 @@ impl INavMsp {
     }
 
     // TODO: If serial-port rs supports standard read write interface we should use this instead of seril explocitly
-    pub fn start(&self, stream: impl Send + std::io::Read + std::io::Write + Clone + 'static, write_delay: Duration) {
-        &self.core.start(stream, write_delay);
+    pub fn start(&self, stream: impl Send + std::io::Read + std::io::Write + Clone + 'static) {
+        &self.core.start(stream);
 
         if &self.core.buff_size() == &0 {
             return;
