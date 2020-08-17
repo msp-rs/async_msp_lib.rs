@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub struct Core {
     parser_locked: Arc<Mutex<MspParser>>,
     buff_size: usize,
+    msp_write_delay: Duration,
 
     msp_reader_send: Sender<MspPacket>,
     msp_reader_recv: Receiver<MspPacket>,
@@ -25,7 +26,7 @@ pub struct Core {
 
 impl Core {
     /// Create new core msp reader and parser
-    pub fn new(buff_size: usize) -> Core {
+    pub fn new(buff_size: usize, msp_write_delay: Duration) -> Core {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
         let write_buff_size = match buff_size {
             0 => 1,
@@ -38,6 +39,7 @@ impl Core {
 
         return Core {
             buff_size,
+            msp_write_delay,
             parser_locked,
             msp_reader_send,
             msp_reader_recv,
@@ -46,7 +48,7 @@ impl Core {
         };
 	  }
 
-    pub fn start(&self, stream: impl Send + std::io::Read + std::io::Write + Clone + 'static, msp_write_delay: Duration) {
+    pub fn start(&self, stream: impl Send + std::io::Read + std::io::Write + Clone + 'static) {
         let serial_write_lock = Arc::new((Mutex::new(self.buff_size.clone()), Condvar::new()));
         let serial_write_lock_clone = serial_write_lock.clone();
 
@@ -54,7 +56,7 @@ impl Core {
             let reader = stream.clone();
             Core::process_input(reader, self.parser_locked.clone(), self.msp_reader_send.clone(), serial_write_lock);
         }
-        Core::process_output(stream, self.msp_writer_recv.clone(), msp_write_delay, serial_write_lock_clone);
+        Core::process_output(stream, self.msp_writer_recv.clone(), self.msp_write_delay.clone(), serial_write_lock_clone);
     }
 
     pub async fn read(&self) -> std::option::Option<MspPacket> {
