@@ -6,7 +6,6 @@ use async_std::task::block_on;
 use std::os::raw::{c_ushort, c_uint, c_char};
 use std::slice;
 use std::ffi::CStr;
-use std::time::Instant;
 
 
 struct ClonableTcpStream(TcpStream);
@@ -58,11 +57,9 @@ pub extern fn set_raw_rc(array: *const c_ushort, length: c_uint) {
         let channels: &[c_ushort] = unsafe {
             slice::from_raw_parts(array, length as usize)
         };
-        let instant = Instant::now();
         block_on(async {
             msp.set_raw_rc(channels.to_vec()).await.unwrap();
         });
-        println!("{}", instant.elapsed().subsec_millis());
     });
 }
 
