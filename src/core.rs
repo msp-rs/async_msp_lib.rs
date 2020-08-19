@@ -101,7 +101,6 @@ impl Core {
 
             let mut serial_buf: Vec<u8> = vec![0; 0x1000];
             while should_stop.load(Ordering::Relaxed) == false {
-                serial_buf.clear();
                 match serial.read(serial_buf.as_mut_slice()) {
                     Ok(bytes) => {
                         let mut parser = parser_locked.lock().await;
