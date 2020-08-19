@@ -33,12 +33,12 @@ impl Core {
         let parser_locked = Arc::new(Mutex::new(parser));
 
         return Core {
-            buff_size: buff_size,
-            parser_locked: parser_locked,
-            msp_reader_send: msp_reader_send,
-            msp_reader_recv: msp_reader_recv,
-            msp_writer_send: msp_writer_send,
-            msp_writer_recv: msp_writer_recv,
+            buff_size,
+            parser_locked,
+            msp_reader_send,
+            msp_reader_recv,
+            msp_writer_send,
+            msp_writer_recv,
         };
 	  }
 

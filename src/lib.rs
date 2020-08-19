@@ -227,7 +227,7 @@ impl INavMsp {
         let core = core::Core::new(buff_size);
 
         return INavMsp {
-            core: core,
+            core,
 
             mode_ranges: channel::<Result<Vec<u8>, ()>>(100),
             set_mode_range_ack: channel::<Result<Vec<u8>, ()>>(100),
