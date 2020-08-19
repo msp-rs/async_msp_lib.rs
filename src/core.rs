@@ -30,11 +30,7 @@ impl Core {
     /// Create new core msp reader and parser
     pub fn new(buff_size: usize, msp_write_delay: Duration, verbose: bool) -> Core {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
-        let write_buff_size = match buff_size {
-            0 => 1,
-            _ => buff_size,
-        };
-        let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(write_buff_size);
+        let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1024);
 
         let parser = MspParser::new();
         let parser_locked = Arc::new(Mutex::new(parser));
@@ -157,8 +153,11 @@ impl Core {
         task::spawn(async move {
             let (lock, cvar) = &*serial_write_lock;
 
+            let mut should_wait_for_lock = false;
             let temp_lock_guard = lock.lock().await;
-            let should_wait_for_lock = *temp_lock_guard > 0;
+            if *temp_lock_guard > 0 {
+                should_wait_for_lock = true;
+            }
             drop(temp_lock_guard);
 
             loop {
