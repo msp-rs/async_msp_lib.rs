@@ -9,7 +9,6 @@ use async_std::sync::{channel, Arc, Condvar, Mutex, Sender, Receiver};
 use async_std::task;
 
 use std::time::{Duration, Instant};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::VecDeque;
 
 
@@ -81,17 +80,13 @@ impl Core {
     //       and passthorugh to next.
     //       if the stream contained response for command, it will return the read/write function
     fn process_input(
-        mut serial: impl Send + std::io::Read + 'static,
+        serial: impl Send + std::io::Read + 'static,
         parser_locked: Arc<Mutex<MspParser>>,
         msp_reader_send: Sender<MspPacket>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
         elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
         verbose: bool,
-    ) -> Arc<AtomicBool> {
-        // TODO: remove the should stop, once this object gets dropped, this will stop
-        let should_stop = Arc::new(AtomicBool::new(false));
-        let should_stop_clone = should_stop.clone();
-
+    ) {
         // task 1: read into input channel from serial(reading from serial is blocking)
         task::spawn(async move {
             let (lock, cvar) = &*serial_write_lock;
@@ -99,36 +94,33 @@ impl Core {
             let initial_buffer_size = *initial_lock;
             drop(initial_lock);
 
-            let mut serial_buf: Vec<u8> = vec![0; 0x1000];
-            while should_stop.load(Ordering::Relaxed) == false {
-                match serial.read(serial_buf.as_mut_slice()) {
-                    Ok(bytes) => {
+            for byte in serial.bytes() {
+                match byte {
+                    Ok(byte) => {
                         let mut parser = parser_locked.lock().await;
-                        for n in 0..bytes {
-                            let res = parser.parse(serial_buf[n]);
-                            match res {
-                                Ok(Some(p)) => {
-                                    if verbose {
-                                        println!("receive new msp packet {}", p.cmd);
-                                        match (*elapsed_queue_lock.lock().await).pop_front() {
-                                            Some(instant) => println!("elapsed time since send {}", instant.elapsed().subsec_millis()),
-                                            None => (),
-                                        };
-                                    }
+                        let res = parser.parse(byte);
+                        match res {
+                            Ok(Some(p)) => {
+                                if verbose {
+                                    println!("receive new msp packet {}", p.cmd);
+                                    match (*elapsed_queue_lock.lock().await).pop_front() {
+                                        Some(instant) => println!("elapsed time since send {}", instant.elapsed().subsec_millis()),
+                                        None => (),
+                                    };
+                                }
 
-                                    msp_reader_send.send(p).await;
+                                msp_reader_send.send(p).await;
 
-                                    // lock the condvar here and update to true, and decrement the sent packets count
-                                    let mut received_lock = lock.lock().await;
-                                    if *received_lock < initial_buffer_size {
-                                        *received_lock += 1;
-                                        // We notify the condvar that the value has changed.
-                                        cvar.notify_one();
-                                    }
-                                },
-                                Err(e) => eprintln!("bad crc {:?}", e),
-                                Ok(None) => ()
-                            }
+                                // lock the condvar here and update to true, and decrement the sent packets count
+                                let mut received_lock = lock.lock().await;
+                                if *received_lock < initial_buffer_size {
+                                    *received_lock += 1;
+                                    // We notify the condvar that the value has changed.
+                                    cvar.notify_one();
+                                }
+                            },
+                            Err(e) => eprintln!("bad crc {:?}", e),
+                            Ok(None) => ()
                         }
                     }
                     Err(ref e) if e.kind() == async_std::io::ErrorKind::TimedOut => {
@@ -137,12 +129,10 @@ impl Core {
                         }
                     }
                     Err(e) => eprintln!("{:?}", e),
-                }
-
+                };
                 task::yield_now().await;
             }
         });
-        return should_stop_clone;
 	  }
 
     // TODO: return joinhandler, so we can stop the tasks on drop
