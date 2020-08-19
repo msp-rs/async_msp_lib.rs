@@ -4,7 +4,7 @@ extern crate multiwii_serial_protocol_v2;
 
 extern crate serialport;
 
-use serialport::{available_ports, SerialPortType};
+use serialport::{SerialPort, available_ports, SerialPortType};
 
 #[cfg(unix)]
 use serialport::TTYPort;
@@ -371,9 +371,10 @@ async fn main() {
         ("dfu", _) => {
             let msg = "R\n";
             let p = matches.value_of("port").unwrap();
-            let mut port = serialport::new(p, 115_200)
+            let mut port = serialport::new(p, 0)
                 .timeout(Duration::from_millis(1))
                 .open_native().expect("Failed to open port");
+            port.set_baud_rate(115_200).expect("Failed to set baud rate");
 
             port.write_all(msg.as_bytes())
                 .expect("Unable to write bytes.");
@@ -1711,11 +1712,14 @@ fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize, verbose: bool) -
                     return msp;
                 },
                 _ => {
-                    let port = ClonableSerialPort(serialport::new(p, 115_200)
+                    let mut sp = serialport::new(port.unwrap(), 0)
                         .timeout(serial_timeout)
-                        .open_native().expect("Failed to open port"));
+                        .open_native().expect("Failed to open port");
+                    sp.set_baud_rate(115_200).expect("Failed to set baud rate");
 
-                    msp.start(port);
+                    let clone_port = ClonableSerialPort(sp);
+
+                    msp.start(clone_port);
                     return msp;
                 }
             }
@@ -1739,9 +1743,12 @@ fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize, verbose: bool) -
                 .port_name
                 .clone();
 
-            let port = ClonableSerialPort(serialport::new(port, 115_200)
-                                          .timeout(serial_timeout)
-                                          .open_native().expect("Failed to open port"));
+            let mut sp = serialport::new(port, 0)
+                .timeout(serial_timeout)
+                .open_native().expect("Failed to open port");
+            sp.set_baud_rate(115_200).expect("Failed to set baud rate");
+
+            let port = ClonableSerialPort(sp);
 
             msp.start(port);
             return msp;
