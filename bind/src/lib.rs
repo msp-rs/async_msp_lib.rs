@@ -1,5 +1,5 @@
 use std::net::TcpStream;
-use async_msp_lib::INavMsp;
+use async_msp_lib::Msp;
 use std::time::Duration;
 use std::cell::RefCell;
 use async_std::task::block_on;
@@ -33,7 +33,7 @@ impl std::io::Read for ClonableTcpStream {
     }
 }
 
-thread_local!(static MSP: RefCell<INavMsp> = RefCell::new(INavMsp::new(0)));
+thread_local!(static MSP: RefCell<Msp> = RefCell::new(Msp::new(0, Duration::from_millis(0), false)));
 
 #[no_mangle]
 pub extern fn start(s: *const c_char) {
@@ -45,7 +45,7 @@ pub extern fn start(s: *const c_char) {
     let stream = ClonableTcpStream(TcpStream::connect(c_str.to_str().unwrap()).unwrap());
     MSP.with(|msp_cell| {
         let msp = msp_cell.borrow_mut();
-        msp.start(stream, Duration::from_millis(0));
+        msp.start(stream);
     });
 }
 
