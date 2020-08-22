@@ -1701,15 +1701,12 @@ fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize, verbose: bool) -
     #[cfg(target_os = "linux")]
     let serial_timeout = Duration::from_millis(0);
 
-    let msp = Msp::new(buff, Duration::from_millis(0), verbose);
-
     match port {
         Some(p) => {
             match p.parse::<SocketAddr>() {
                 Ok(sa) =>  {
                     let stream = ClonableTcpStream(TcpStream::connect(sa).unwrap());
-                    msp.start(stream);
-                    return msp;
+                    return Msp::open(stream, buff, Duration::from_millis(0), verbose);
                 },
                 _ => {
                     let mut sp = serialport::new(port.unwrap(), 0)
@@ -1719,8 +1716,7 @@ fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize, verbose: bool) -
 
                     let clone_port = ClonableSerialPort(sp);
 
-                    msp.start(clone_port);
-                    return msp;
+                    return Msp::open(clone_port, buff, Duration::from_millis(0), verbose);
                 }
             }
         },
@@ -1750,8 +1746,7 @@ fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize, verbose: bool) -
 
             let port = ClonableSerialPort(sp);
 
-            msp.start(port);
-            return msp;
+            return Msp::open(port, buff, Duration::from_millis(0), verbose);
         }
     }
 }
