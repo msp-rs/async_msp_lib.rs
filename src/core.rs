@@ -19,45 +19,47 @@ pub struct Core {
     buff_size: usize,
     msp_write_delay: Duration,
 
-    msp_reader_send: Sender<MspPacket>,
     msp_reader_recv: Receiver<MspPacket>,
     msp_writer_send: Sender<MspPacket>,
     msp_writer_recv: Receiver<MspPacket>,
 }
 
 impl Core {
+    // i am thinking to close the first sender and let all the senders after collapse, but its problamatic when we have clones
     /// Create new core msp reader and parser
-    pub fn new(buff_size: usize, msp_write_delay: Duration, verbose: bool) -> Core {
+    pub fn open(stream: impl Send + std::io::Read + std::io::Write + Clone + 'static,
+                buff_size: usize,
+                msp_write_delay: Duration,
+                verbose: bool,
+    ) -> Core {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
         let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1024);
 
         let parser = MspParser::new();
         let parser_locked = Arc::new(Mutex::new(parser));
 
+        let serial_write_lock = Arc::new((Mutex::new(buff_size.clone()), Condvar::new()));
+        let serial_write_lock_clone = serial_write_lock.clone();
+
+        let elapsed_queue_lock = Arc::new(Mutex::new(VecDeque::with_capacity(buff_size.clone())));
+        let elapsed_queue_lock_clone = elapsed_queue_lock.clone();
+
+
+        if buff_size > 0 {
+            let reader = stream.clone();
+            Core::process_input(reader, parser_locked.clone(), msp_reader_send, serial_write_lock, elapsed_queue_lock, verbose.clone());
+        }
+        Core::process_output(stream, msp_writer_recv.clone(), serial_write_lock_clone, msp_write_delay.clone(), elapsed_queue_lock_clone, verbose.clone());
+
         return Core {
             buff_size,
             msp_write_delay,
             verbose,
             parser_locked,
-            msp_reader_send,
             msp_reader_recv,
             msp_writer_send,
             msp_writer_recv,
         };
-	  }
-
-    pub fn start(&self, stream: impl Send + std::io::Read + std::io::Write + Clone + 'static) {
-        let serial_write_lock = Arc::new((Mutex::new(self.buff_size.clone()), Condvar::new()));
-        let serial_write_lock_clone = serial_write_lock.clone();
-
-        let elapsed_queue_lock = Arc::new(Mutex::new(VecDeque::with_capacity(self.buff_size.clone())));
-        let elapsed_queue_lock_clone = elapsed_queue_lock.clone();
-
-        if &self.buff_size > &0 {
-            let reader = stream.clone();
-            Core::process_input(reader, self.parser_locked.clone(), self.msp_reader_send.clone(), serial_write_lock, elapsed_queue_lock, self.verbose.clone());
-        }
-        Core::process_output(stream, self.msp_writer_recv.clone(), serial_write_lock_clone, self.msp_write_delay.clone(), elapsed_queue_lock_clone, self.verbose.clone());
     }
 
     pub async fn read(&self) -> std::option::Option<MspPacket> {
