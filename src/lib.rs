@@ -14,7 +14,7 @@ use std::time::Duration;
 use std::convert::TryInto;
 use futures::future::try_join_all;
 
-mod core;
+pub mod core;
 
 
 pub struct MspDataFlashReplyWithData {
@@ -223,7 +223,7 @@ pub struct Msp {
 
 impl Msp {
     pub fn open(stream: impl Send + std::io::Read + std::io::Write + Clone + 'static,
-                buff_size: usize, write_delay: Duration, verbose: bool) -> Msp {
+                buff_size: usize, write_delay: Duration, verbose: bool) -> (Msp, core::MspTaskHandle)  {
 
         let mode_ranges = channel::<Result<Vec<u8>, ()>>(100);
         let set_mode_range_ack = channel::<Result<Vec<u8>, ()>>(100);
@@ -271,7 +271,7 @@ impl Msp {
         let write_eeprom_ack = channel::<Result<Vec<u8>, ()>>(1);
 
 
-        let core = core::Core::open(stream, buff_size, write_delay, verbose);
+        let (core, handle) = core::Core::open(stream, buff_size, write_delay, verbose);
 
         let msp = Msp {
             core,
@@ -323,7 +323,7 @@ impl Msp {
         };
 
         if buff_size == 0 {
-            return msp;
+            return (msp, handle);
         }
 
         Msp::process_route(
@@ -375,7 +375,7 @@ impl Msp {
             write_eeprom_ack.0,
         );
 
-        return msp;
+        return (msp, handle);
     }
 
     fn process_route(
