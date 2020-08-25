@@ -24,6 +24,21 @@ pub struct Core {
     msp_writer_recv: Receiver<MspPacket>,
 }
 
+pub struct MspTaskHandle {
+    input_handle: Option<async_std::task::JoinHandle<()>>,
+    output_handle: async_std::task::JoinHandle<()>,
+}
+
+impl MspTaskHandle {
+    pub async fn cancel(self) {
+        self.output_handle.cancel().await;
+        match self.input_handle {
+            Some(h) => h.cancel().await,
+            None => None,
+        };
+    }
+}
+
 impl Core {
     // i am thinking to close the first sender and let all the senders after collapse, but its problamatic when we have clones
     /// Create new core msp reader and parser
@@ -31,7 +46,7 @@ impl Core {
                 buff_size: usize,
                 msp_write_delay: Duration,
                 verbose: bool,
-    ) -> Core {
+    ) -> (Core, MspTaskHandle) {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
         let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1024);
 
@@ -44,14 +59,16 @@ impl Core {
         let elapsed_queue_lock = Arc::new(Mutex::new(VecDeque::with_capacity(buff_size.clone())));
         let elapsed_queue_lock_clone = elapsed_queue_lock.clone();
 
-
-        if buff_size > 0 {
+        let input_handle = if buff_size > 0 {
             let reader = stream.clone();
-            Core::process_input(reader, parser_locked.clone(), msp_reader_send, serial_write_lock, elapsed_queue_lock, verbose.clone());
-        }
-        Core::process_output(stream, msp_writer_recv.clone(), serial_write_lock_clone, msp_write_delay.clone(), elapsed_queue_lock_clone, verbose.clone());
+            Some(Core::process_input(reader, parser_locked.clone(), msp_reader_send, serial_write_lock, elapsed_queue_lock, verbose.clone()))
+        } else {
+            None
+        };
 
-        return Core {
+        let output_handle = Core::process_output(stream, msp_writer_recv.clone(), serial_write_lock_clone, msp_write_delay.clone(), elapsed_queue_lock_clone, verbose.clone());
+
+        return (Core {
             buff_size,
             msp_write_delay,
             verbose,
@@ -59,7 +76,10 @@ impl Core {
             msp_reader_recv,
             msp_writer_send,
             msp_writer_recv,
-        };
+        }, MspTaskHandle {
+            input_handle,
+            output_handle
+        });
     }
 
     pub async fn read(&self) -> std::option::Option<MspPacket> {
@@ -84,7 +104,7 @@ impl Core {
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
         elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
         verbose: bool,
-    ) {
+    ) -> async_std::task::JoinHandle<()> {
         // task 1: read into input channel from serial(reading from serial is blocking)
         task::spawn(async move {
             let (lock, cvar) = &*serial_write_lock;
@@ -130,7 +150,7 @@ impl Core {
                 };
                 task::yield_now().await;
             }
-        });
+        })
 	  }
 
     // TODO: return joinhandler, so we can stop the tasks on drop
@@ -141,7 +161,7 @@ impl Core {
         write_delay: Duration,
         elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
         verbose: bool,
-    ) {
+    ) -> async_std::task::JoinHandle<()> {
         task::spawn(async move {
             let (lock, cvar) = &*serial_write_lock;
 
@@ -211,7 +231,7 @@ impl Core {
 
                 task::yield_now().await;
             }
-        });
+        })
 	  }
 
     pub async fn reset_parser(&self) {
