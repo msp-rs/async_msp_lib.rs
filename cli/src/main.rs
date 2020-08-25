@@ -36,6 +36,7 @@ use multiwii_serial_protocol_v2::structs::*;
 use std::collections::HashMap;
 use packed_struct::PrimitiveEnum;
 use async_msp_lib::{Msp, SettingInfo};
+use async_msp_lib::core::MspTaskHandle;
 use itertools::Itertools;
 
 
@@ -398,7 +399,7 @@ async fn main() {
     let is_strict = matches.is_present("strict");
     let buff = usize::from_str(matches.value_of("buff").unwrap()).unwrap();
     let is_verbose = matches.is_present("verbose");
-    let inav = open_msp(matches.value_of("port"), &flavor, buff, is_verbose);
+    let (inav, _handle) = open_msp(matches.value_of("port"), &flavor, buff, is_verbose);
 
     match matches.subcommand() {
         ("setting", Some(setting_matches)) => {
@@ -1694,7 +1695,7 @@ async fn dump_common_setting(inav: &Msp) -> Result<Vec<String>, &str> {
     return Ok(dump);
 }
 
-fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize, verbose: bool) -> Msp {
+fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize, verbose: bool) -> (Msp, MspTaskHandle) {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     let serial_timeout = Duration::from_millis(1);
 
