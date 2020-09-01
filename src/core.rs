@@ -7,6 +7,7 @@ use multiwii_serial_protocol_v2::{MspPacket, MspParser};
 
 use async_std::sync::{channel, Arc, Condvar, Mutex, Sender, Receiver};
 use async_std::task;
+use async_std::io::{Error, ErrorKind};
 
 use std::time::{Duration, Instant};
 use std::collections::VecDeque;
@@ -19,9 +20,9 @@ pub struct Core {
     buff_size: usize,
     msp_write_delay: Duration,
 
-    msp_reader_recv: Receiver<MspPacket>,
+    msp_reader_recv: Receiver<Result<MspPacket, Error>>,
     msp_writer_send: Sender<MspPacket>,
-    msp_writer_recv: Receiver<MspPacket>,
+    msp_error_recv: Receiver<Error>,
 }
 
 pub struct MspTaskHandle {
@@ -47,8 +48,9 @@ impl Core {
                 msp_write_delay: Duration,
                 verbose: bool,
     ) -> (Core, MspTaskHandle) {
-        let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
+        let (msp_reader_send, msp_reader_recv) = channel::<Result<MspPacket, Error>>(4096);
         let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1024);
+        let (msp_error_send, msp_error_recv) = channel::<Error>(1);
 
         let parser = MspParser::new();
         let parser_locked = Arc::new(Mutex::new(parser));
@@ -61,12 +63,12 @@ impl Core {
 
         let input_handle = if buff_size > 0 {
             let reader = stream.clone();
-            Some(Core::process_input(reader, parser_locked.clone(), msp_reader_send, serial_write_lock, elapsed_queue_lock, verbose.clone()))
+            Some(Core::process_input(reader, parser_locked.clone(), msp_reader_send, serial_write_lock, msp_error_send.clone(), elapsed_queue_lock, verbose.clone()))
         } else {
             None
         };
 
-        let output_handle = Core::process_output(stream, msp_writer_recv.clone(), serial_write_lock_clone, msp_write_delay.clone(), elapsed_queue_lock_clone, verbose.clone());
+        let output_handle = Core::process_output(stream, msp_writer_recv.clone(), serial_write_lock_clone, msp_write_delay.clone(), msp_error_send.clone(), elapsed_queue_lock_clone, verbose.clone());
 
         return (Core {
             buff_size,
@@ -75,22 +77,34 @@ impl Core {
             parser_locked,
             msp_reader_recv,
             msp_writer_send,
-            msp_writer_recv,
+            msp_error_recv,
         }, MspTaskHandle {
             input_handle,
             output_handle
         });
     }
 
-    pub async fn read(&self) -> std::option::Option<MspPacket> {
+    pub async fn read(&self) -> Result<MspPacket, Error> {
         return match self.msp_reader_recv.recv().await {
-            Err(_) => None,
-            Ok(packet) => Some(packet),
+            Ok(packet_res) => packet_res,
+            Err(_) => Err(Error::new(ErrorKind::BrokenPipe, "reader thread exited")),
         };
     }
 
-    pub async fn write(&self, packet: MspPacket)  {
+    pub async fn write(&self, packet: MspPacket) -> Result<(), Error> {
+        println!("111111111111111111111");
+        match self.msp_error_recv.try_recv() {
+            Ok(packet) => {
+                eprintln!("should have checked the results");
+                return Err(packet);
+            },
+            Err(_) => (),
+        };
+
+        println!("2222222222222222222222222");
+
         self.msp_writer_send.send(packet).await;
+        Ok(())
     }
 
     // TODO: return joinhandler, so we can stop the tasks on drop
@@ -100,8 +114,9 @@ impl Core {
     fn process_input(
         serial: impl Send + std::io::Read + 'static,
         parser_locked: Arc<Mutex<MspParser>>,
-        msp_reader_send: Sender<MspPacket>,
+        msp_reader_send: Sender<Result<MspPacket, Error>>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
+        msp_error_send: Sender<Error>,
         elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
         verbose: bool,
     ) -> async_std::task::JoinHandle<()> {
@@ -127,7 +142,7 @@ impl Core {
                                     };
                                 }
 
-                                msp_reader_send.send(p).await;
+                                msp_reader_send.send(Ok(p)).await;
 
                                 // lock the condvar here and update to true, and decrement the sent packets count
                                 let mut received_lock = lock.lock().await;
@@ -141,12 +156,15 @@ impl Core {
                             Ok(None) => ()
                         }
                     }
-                    Err(ref e) if e.kind() == async_std::io::ErrorKind::TimedOut => {
+                    Err(ref e) if e.kind() == ErrorKind::TimedOut => {
                         if verbose {
                             println!("read timeout");
                         }
                     }
-                    Err(e) => eprintln!("{:?}", e),
+                    Err(e) => {
+                        eprintln!("read read read");
+                        msp_reader_send.send(Err(e)).await;
+                    }
                 };
                 task::yield_now().await;
             }
@@ -159,6 +177,7 @@ impl Core {
         msp_writer_recv: Receiver<MspPacket>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
         write_delay: Duration,
+        msp_error_send: Sender<Error>,
         elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
         verbose: bool,
     ) -> async_std::task::JoinHandle<()> {
@@ -214,12 +233,13 @@ impl Core {
 
                             break;
                         },
-                        Err(ref e) if e.kind() == async_std::io::ErrorKind::TimedOut => {
+                        Err(ref e) if e.kind() == ErrorKind::TimedOut => {
                             // controller is busy/serial buffer is full, sleep and attempt write again
                             task::yield_now().await;
                         },
                         Err(e) => {
-                            eprintln!("failed to write{:?}", e);
+                            eprintln!("write write write");
+                            msp_error_send.send(e).await;
                             *(lock.lock().await) += 1;
                         }
                     }

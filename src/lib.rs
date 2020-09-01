@@ -429,11 +429,11 @@ impl Msp {
         task::spawn(async move {
             loop {
                 let packet = match core.read().await {
-                    None => break,
-                    Some(packet) => packet,
+                    Ok(packet) => packet,
+                    Err(e) => panic!(e),
                 };
 
-                // println!("process route");
+                println!("process route");
 
                 let cmd = MspCommandCode::from_primitive(packet.cmd);
                 let packet_length = packet.data.len();
@@ -1421,7 +1421,8 @@ impl Msp {
             data: id,
         };
 
-        return Ok(self.core.write(packet).await);
+        self.core.write(packet).await;
+        Ok(())
     }
 
     async fn receive_setting_info(&self) -> Result<SettingInfo, &str> {
