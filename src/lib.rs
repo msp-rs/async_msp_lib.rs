@@ -1554,7 +1554,10 @@ impl Msp {
             data: payload.to_vec(),
         };
 
-        self.core.write(packet).await;
+        match self.core.write(packet).await {
+            Ok(_) => (),
+            Err(_) => return Err("failed to write raw rc")
+        };
 
         if &self.core.buff_size() == &0 {
             return Ok(());

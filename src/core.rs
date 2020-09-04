@@ -63,12 +63,12 @@ impl Core {
 
         let input_handle = if buff_size > 0 {
             let reader = stream.clone();
-            Some(Core::process_input(reader, parser_locked.clone(), msp_reader_send, serial_write_lock, msp_error_send.clone(), elapsed_queue_lock, verbose.clone()))
+            Some(Core::process_input(reader, parser_locked.clone(), msp_reader_send, serial_write_lock, elapsed_queue_lock, verbose.clone()))
         } else {
             None
         };
 
-        let output_handle = Core::process_output(stream, msp_writer_recv.clone(), serial_write_lock_clone, msp_write_delay.clone(), msp_error_send.clone(), elapsed_queue_lock_clone, verbose.clone());
+        let output_handle = Core::process_output(stream, msp_writer_recv.clone(), serial_write_lock_clone, msp_write_delay.clone(), msp_error_send, elapsed_queue_lock_clone, verbose.clone());
 
         return (Core {
             buff_size,
@@ -93,6 +93,8 @@ impl Core {
 
     pub async fn write(&self, packet: MspPacket) -> Result<(), Error> {
         println!("111111111111111111111");
+        self.msp_writer_send.send(packet).await;
+        println!("2222222222222222222222222");
         match self.msp_error_recv.try_recv() {
             Ok(packet) => {
                 eprintln!("should have checked the results");
@@ -101,9 +103,8 @@ impl Core {
             Err(_) => (),
         };
 
-        println!("2222222222222222222222222");
+        println!("3333333333333333333333333");
 
-        self.msp_writer_send.send(packet).await;
         Ok(())
     }
 
@@ -111,12 +112,17 @@ impl Core {
     // TODO: rewrite using stream api with inspect, each command will inspect
     //       and passthorugh to next.
     //       if the stream contained response for command, it will return the read/write function
+    // what if i break, the reader and the writer on error.
+    // its like a broken pipe, something broke and we can't operate anymore
+    // we should halt throw an error and let the upper level deal with it
+    // or maybe in async thats not the way to deliver errors, maybe we need another channel for errors
+    // and we will break when there is an error and propogate it top
+    // because right now ther user won't receive an error until the next attempt to read or write
     fn process_input(
         serial: impl Send + std::io::Read + 'static,
         parser_locked: Arc<Mutex<MspParser>>,
         msp_reader_send: Sender<Result<MspPacket, Error>>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
-        msp_error_send: Sender<Error>,
         elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
         verbose: bool,
     ) -> async_std::task::JoinHandle<()> {
@@ -164,6 +170,7 @@ impl Core {
                     Err(e) => {
                         eprintln!("read read read");
                         msp_reader_send.send(Err(e)).await;
+                        break;
                     }
                 };
                 task::yield_now().await;
@@ -191,7 +198,7 @@ impl Core {
             }
             drop(temp_lock_guard);
 
-            loop {
+            'outer: loop {
                 // lock here counter for sent packets
                 // if counter is more then buffer size(10), lock then 10 turn the value to false and continue the loop
                 // essentially waiting for value to change
@@ -239,7 +246,9 @@ impl Core {
                         },
                         Err(e) => {
                             eprintln!("write write write");
-                            msp_error_send.send(e).await;
+                            msp_error_send.try_send(e);
+                            break;
+                            // break 'outer;
                             *(lock.lock().await) += 1;
                         }
                     }
