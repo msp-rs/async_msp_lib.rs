@@ -20,7 +20,7 @@ pub struct Core {
     buff_size: usize,
     msp_write_delay: Duration,
 
-    msp_reader_recv: Receiver<Result<MspPacket, Error>>,
+    msp_reader_recv: Receiver<MspPacket>,
     msp_writer_send: Sender<MspPacket>,
     pub msp_error_recv: Receiver<Error>,
 }
@@ -48,7 +48,7 @@ impl Core {
                 msp_write_delay: Duration,
                 verbose: bool,
     ) -> (Core, MspTaskHandle) {
-        let (msp_reader_send, msp_reader_recv) = channel::<Result<MspPacket, Error>>(4096);
+        let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
         let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1024);
         let (msp_error_send, msp_error_recv) = channel::<Error>(1);
 
@@ -63,7 +63,7 @@ impl Core {
 
         let input_handle = if buff_size > 0 {
             let reader = stream.clone();
-            Some(Core::process_input(reader, parser_locked.clone(), msp_reader_send, serial_write_lock, elapsed_queue_lock, verbose.clone()))
+            Some(Core::process_input(reader, parser_locked.clone(), msp_reader_send, serial_write_lock, msp_error_send.clone(), elapsed_queue_lock, verbose.clone()))
         } else {
             None
         };
@@ -84,11 +84,12 @@ impl Core {
         });
     }
 
-    pub async fn read(&self) -> Result<MspPacket, Error> {
-        return match self.msp_reader_recv.recv().await {
-            Ok(packet_res) => packet_res,
-            Err(_) => Err(Error::new(ErrorKind::BrokenPipe, "reader thread exited")),
-        };
+    pub async fn read(&self) -> MspPacket { // Result<MspPacket, Error> {
+        return self.msp_reader_recv.recv().await.unwrap();
+        // return match self.msp_reader_recv.recv().await {
+        //     Ok(packet_res) => Ok(packet_res),
+        //     Err(_) => Err(Error::new(ErrorKind::BrokenPipe, "reader thread exited")),
+        // };
     }
 
     pub async fn write(&self, packet: MspPacket) {
@@ -115,8 +116,9 @@ impl Core {
     fn process_input(
         serial: impl Send + std::io::Read + 'static,
         parser_locked: Arc<Mutex<MspParser>>,
-        msp_reader_send: Sender<Result<MspPacket, Error>>,
+        msp_reader_send: Sender<MspPacket>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
+        msp_error_send: Sender<Error>,
         elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
         verbose: bool,
     ) -> async_std::task::JoinHandle<()> {
@@ -142,7 +144,7 @@ impl Core {
                                     };
                                 }
 
-                                msp_reader_send.send(Ok(p)).await;
+                                msp_reader_send.send(p).await;
 
                                 // lock the condvar here and update to true, and decrement the sent packets count
                                 let mut received_lock = lock.lock().await;
@@ -163,8 +165,8 @@ impl Core {
                     }
                     Err(e) => {
                         eprintln!("read read read");
-                        msp_reader_send.send(Err(e)).await;
-                        break;
+                        msp_error_send.send(e).await;
+                        // break;
                     }
                 };
                 task::yield_now().await;
@@ -240,8 +242,8 @@ impl Core {
                         },
                         Err(e) => {
                             eprintln!("write write write");
-                            msp_error_send.try_send(e);
-                            break 'outer;
+                            msp_error_send.send(e).await;
+                            // break 'outer;
                             *(lock.lock().await) += 1;
                         }
                     }
