@@ -13,6 +13,11 @@ use async_std::future;
 use std::time::Duration;
 use std::convert::TryInto;
 use futures::future::try_join_all;
+use futures::{
+    future::FutureExt, // for `.fuse()`
+    pin_mut,
+    select,
+};
 
 pub mod core;
 
@@ -173,7 +178,7 @@ impl FlashDataFile {
 
 // TODO: we should pass by reference in channel, or Vec<u8> reference
 pub struct Msp {
-    core: core::Core,
+    pub core: core::Core,
 
     mode_ranges: Receiver<Vec<u8>>,
     set_mode_range_ack: Receiver<Vec<u8>>,
@@ -326,56 +331,58 @@ impl Msp {
             return (msp, handle);
         }
 
-        Msp::process_route(
-            msp.core.clone(),
-
-            mode_ranges.0,
-            set_mode_range_ack.0,
-
-            motor_mixers.0,
-            set_motor_mixer_ack.0,
-
-            osd_configs.0,
-            set_osd_config_ack.0,
-            osd_layout_count.0,
-            osd_layout_items.0,
-            set_osd_layout_item_ack.0,
-
-            serial_settings.0,
-            set_serial_settings_ack.0,
-
-            features.0,
-            set_features_ack.0,
-
-            servo_mix_rules.0,
-            set_servo_mix_rules_ack.0,
-
-            servo_mixer.0,
-            set_servo_mixer_ack.0,
-
-            servo_configs.0,
-            set_servo_configs_ack.0,
-
-            rx_map.0,
-            set_rx_map_ack.0,
-
-            pg_settings.0,
-            setting_info.0,
-            set_setting_ack.0,
-
-            write_char_ack.0,
-
-            set_raw_rc_ack.0,
-
-            summary.0,
-            chunk.0,
-
-            reset_conf_ack.0,
-
-            write_eeprom_ack.0,
-        );
-
         return (msp, handle);
+
+        // Msp::process_route(
+        //     msp.core.clone(),
+
+        //     mode_ranges.0,
+        //     set_mode_range_ack.0,
+
+        //     motor_mixers.0,
+        //     set_motor_mixer_ack.0,
+
+        //     osd_configs.0,
+        //     set_osd_config_ack.0,
+        //     osd_layout_count.0,
+        //     osd_layout_items.0,
+        //     set_osd_layout_item_ack.0,
+
+        //     serial_settings.0,
+        //     set_serial_settings_ack.0,
+
+        //     features.0,
+        //     set_features_ack.0,
+
+        //     servo_mix_rules.0,
+        //     set_servo_mix_rules_ack.0,
+
+        //     servo_mixer.0,
+        //     set_servo_mixer_ack.0,
+
+        //     servo_configs.0,
+        //     set_servo_configs_ack.0,
+
+        //     rx_map.0,
+        //     set_rx_map_ack.0,
+
+        //     pg_settings.0,
+        //     setting_info.0,
+        //     set_setting_ack.0,
+
+        //     write_char_ack.0,
+
+        //     set_raw_rc_ack.0,
+
+        //     summary.0,
+        //     chunk.0,
+
+        //     reset_conf_ack.0,
+
+        //     write_eeprom_ack.0,
+        // );
+
+        // return (msp, handle);
     }
 
     fn process_route(
@@ -428,6 +435,10 @@ impl Msp {
     ) {
         task::spawn(async move {
             loop {
+
+
+                return;
+
                 let packet = match core.read().await {
                     Ok(packet) => packet,
                     Err(e) => panic!(e),
@@ -1554,10 +1565,19 @@ impl Msp {
             data: payload.to_vec(),
         };
 
-        match self.core.write(packet).await {
-            Ok(_) => (),
-            Err(_) => return Err("failed to write raw rc")
-        };
+        println!("send raw_rc here");
+        // maybe wait here for write or error
+
+        select! {
+            () = self.core.write(packet).fuse() => {},
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap(); // check error from channel
+                println!("{:?}", e);
+                return Err("failed to write raw rc, broken pipe")
+            },
+        }
+
+        println!("raw_rc sent here");
 
         if &self.core.buff_size() == &0 {
             return Ok(());

@@ -22,7 +22,7 @@ pub struct Core {
 
     msp_reader_recv: Receiver<Result<MspPacket, Error>>,
     msp_writer_send: Sender<MspPacket>,
-    msp_error_recv: Receiver<Error>,
+    pub msp_error_recv: Receiver<Error>,
 }
 
 pub struct MspTaskHandle {
@@ -68,7 +68,7 @@ impl Core {
             None
         };
 
-        let output_handle = Core::process_output(stream, msp_writer_recv.clone(), serial_write_lock_clone, msp_write_delay.clone(), msp_error_send, elapsed_queue_lock_clone, verbose.clone());
+        let output_handle = Core::process_output(stream, msp_writer_recv, serial_write_lock_clone, msp_write_delay.clone(), msp_error_send, elapsed_queue_lock_clone, verbose.clone());
 
         return (Core {
             buff_size,
@@ -91,21 +91,13 @@ impl Core {
         };
     }
 
-    pub async fn write(&self, packet: MspPacket) -> Result<(), Error> {
-        println!("111111111111111111111");
+    pub async fn write(&self, packet: MspPacket) {
+        println!("sending write");
         self.msp_writer_send.send(packet).await;
-        println!("2222222222222222222222222");
-        match self.msp_error_recv.try_recv() {
-            Ok(packet) => {
-                eprintln!("should have checked the results");
-                return Err(packet);
-            },
-            Err(_) => (),
-        };
+    }
 
-        println!("3333333333333333333333333");
-
-        Ok(())
+    pub async fn error(&self) -> Error {
+        return self.msp_error_recv.recv().await.unwrap();
     }
 
     // TODO: return joinhandler, so we can stop the tasks on drop
@@ -118,6 +110,8 @@ impl Core {
     // or maybe in async thats not the way to deliver errors, maybe we need another channel for errors
     // and we will break when there is an error and propogate it top
     // because right now ther user won't receive an error until the next attempt to read or write
+
+    // when every thing is async its great but when error happens we need to handle in synchronously in blocking way
     fn process_input(
         serial: impl Send + std::io::Read + 'static,
         parser_locked: Arc<Mutex<MspParser>>,
@@ -247,8 +241,7 @@ impl Core {
                         Err(e) => {
                             eprintln!("write write write");
                             msp_error_send.try_send(e);
-                            break;
-                            // break 'outer;
+                            break 'outer;
                             *(lock.lock().await) += 1;
                         }
                     }
