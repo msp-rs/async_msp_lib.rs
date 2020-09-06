@@ -1558,34 +1558,26 @@ impl Msp {
         };
 
         println!("send raw_rc here");
-        // maybe wait here for write or error
 
-        select! {
-            () = self.core.write(packet).fuse() => {},
+        let write_fn = async {
+            self.core.write(packet).await;
+
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
+
+            return match self.set_raw_rc_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(e) => Err("failed to write raw rc, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
             e_res = self.core.msp_error_recv.recv().fuse() => {
                 let e = e_res.unwrap(); // check error from channel
                 println!("{:?}", e);
-                return Err("failed to write raw rc, broken pipe")
-            },
-        }
-
-        println!("raw_rc sent here");
-
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
-
-        select! {
-            p_res = self.set_raw_rc_ack.recv().fuse() => {
-                return match p_res {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err("failed to write raw rc, channel closed")
-                };
-            },
-            e_res = self.core.msp_error_recv.recv().fuse() => {
-                let e = e_res.unwrap(); // check error from channel
-                println!("{:?}", e);
-                return Err("failed to read")
+                Err("error writing raw rc")
             },
         }
     }
