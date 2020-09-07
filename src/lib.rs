@@ -383,6 +383,11 @@ impl Msp {
         return (msp, handle);
     }
 
+
+    // TODO: maybe replace this function with 
+    // https://docs.rs/async-std/1.6.3/async_std/stream/trait.Stream.html#method.scan
+    // - or -
+    // https://docs.rs/async-std/1.6.3/async_std/stream/trait.Stream.html#method.find
     fn process_route(
         core: core::Core,
 
