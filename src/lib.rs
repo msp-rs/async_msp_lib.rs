@@ -13,11 +13,7 @@ use async_std::future;
 use std::time::Duration;
 use std::convert::TryInto;
 use futures::future::try_join_all;
-use futures::{
-    future::FutureExt, // for `.fuse()`
-    pin_mut,
-    select,
-};
+use futures::{future::FutureExt, select};
 
 pub mod core;
 
@@ -121,6 +117,7 @@ impl From<&SettingInfo> for String {
 
 // TODO: we should return interface that implements async_std::io::Read trait
 // TODO: why not return move the payload vec instead of the io result??
+// TODO: return Err(Error) instead of Err(&str)
 impl FlashDataFile {
     pub async fn read_chunk(&mut self) -> io::Result<Vec<u8>> {
         if self.received_address >= self.used_size {
@@ -639,12 +636,23 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        let payload = match self.summary.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get flash summary")
+            return match self.summary.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => Err("failed to get flash summary, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get flash summary")
+            },
+        }?;
 
         let summary = MspDataFlashSummaryReply::unpack_from_slice(&payload).unwrap();
 
@@ -683,15 +691,26 @@ impl Msp {
             data: payload.pack().to_vec(),
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
-        return match self.set_mode_range_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to set mode range")
+            return match self.set_mode_range_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to set mode range, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to set mode range")
+            },
         };
     }
 
@@ -706,15 +725,23 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        // TODO: we are not sure this ack is for our request, because there is no id for the request
-        // TODO: what if we are reading packet that was sent long time ago
-        // TODO: also currently if no one is reading the channges, we may hang
-        let payload = match self.mode_ranges.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get mode_ranges")
+            return match self.mode_ranges.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => return Err("failed to get mode_ranges, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get mode_ranges")
+            },
+        }?;
 
         let mut ranges = vec![];
         let len = MspModeRange::packed_bytes();
@@ -751,15 +778,26 @@ impl Msp {
             data: payload.pack().to_vec(),
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
-        return match self.set_motor_mixer_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to set motor mixer")
+            return match self.set_motor_mixer_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to set motor mixer, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to set motor mixer")
+            },
         };
     }
 
@@ -774,12 +812,23 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        let payload = match self.motor_mixers.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get motor mixers")
+            return match self.motor_mixers.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => return Err("failed to get motor mixers, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get motor mixers")
+            },
+        }?;
 
         let mut mmixers = vec![];
         let len = MspMotorMixer::packed_bytes();
@@ -808,15 +857,26 @@ impl Msp {
             data: payload.pack().to_vec(),
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
-        return match self.set_osd_config_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to set osd item")
+            return match self.set_osd_config_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to set osd item, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to set osd item")
+            },
         };
     }
 
@@ -835,15 +895,26 @@ impl Msp {
             data: payload.pack().to_vec(),
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
-        return match self.set_osd_config_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to set osd config")
+            return match self.set_osd_config_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to set osd config, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to set osd config")
+            },
         };
     }
 
@@ -858,12 +929,22 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
-
-        let payload = match self.osd_configs.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get osd config")
+        let write_fn = async {
+            self.core.write(packet).await;
+            return match self.osd_configs.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => return Err("failed to get osd config, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get osd config")
+            },
+        }?;
 
         let header_len = MspSetGetOsdConfig::packed_bytes();
         let osd_set_get_reply = MspSetGetOsdConfig::unpack_from_slice(&payload[..header_len]).unwrap();
@@ -894,15 +975,26 @@ impl Msp {
             data: payload.pack().to_vec(),
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
-        return match self.set_osd_layout_item_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to set osd layout item")
+            return match self.set_osd_layout_item_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to set osd layout item, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to set osd layout item")
+            },
         };
     }
 
@@ -917,12 +1009,23 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        let payload = match self.osd_layout_count.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get layout count")
+            return match self.osd_layout_count.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => return Err("failed to get layout count, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get layout count")
+            },
+        }?;
 
         let header_len = MspOsdLayouts::packed_bytes();
         let osd_layout_config = MspOsdLayouts::unpack_from_slice(&payload[..header_len]).unwrap();
@@ -941,12 +1044,23 @@ impl Msp {
             data: vec![layout_index],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        let payload = match self.osd_layout_items.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get layout items")
+            return match self.osd_layout_items.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => Err("failed to get layout items, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get layout items")
+            },
+        }?;
 
         let mut item_positions = vec![];
         let len = MspOsdItemPosition::packed_bytes();
@@ -993,15 +1107,26 @@ impl Msp {
             data: payload,
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
-        return match self.set_serial_settings_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to set serial settings")
+            return match self.set_serial_settings_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to set serial settings, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to set serial settings")
+            },
         };
     }
 
@@ -1016,12 +1141,23 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        let payload = match self.serial_settings.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get serial settings")
+            return match self.serial_settings.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => return Err("failed to get serial settings, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get serial settings")
+            },
+        }?;
 
         let mut serials = vec![];
         let len = MspSerialSetting::packed_bytes();
@@ -1060,13 +1196,24 @@ impl Msp {
             data: clone.pack().to_vec(),
         };
 
-        self.core.write(packet).await;
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
-        return match self.set_features_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to set features")
+        let write_fn = async {
+            self.core.write(packet).await;
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
+            return match self.set_features_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to set features, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to set features")
+            },
         };
     }
 
@@ -1081,12 +1228,23 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        let payload = match self.features.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get features")
+            return match self.features.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => return Err("failed to get features, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get features")
+            },
+        }?;
 
         let mut feat = MspFeatures::unpack_from_slice(&payload).unwrap();
 
@@ -1111,15 +1269,26 @@ impl Msp {
             data: payload.pack().to_vec(),
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
-        return match self.set_servo_mix_rules_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to set servo mix rule")
+            return match self.set_servo_mix_rules_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to set servo mix rule, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to set servo mix rule")
+            },
         };
     }
 
@@ -1134,12 +1303,23 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        let payload = match self.servo_mix_rules.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get servo mix rule")
+            return match self.servo_mix_rules.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => return Err("failed to get servo mix rule, closed channel")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get servo mix rule")
+            },
+        }?;
 
         let mut rules = vec![];
         let len = MspServoMixRule::packed_bytes();
@@ -1155,9 +1335,6 @@ impl Msp {
     }
 
     pub async fn set_servo_mixer(&self, index: u8, servo_rule: MspServoMixer) -> Result<(), &str> {
-        if &self.core.buff_size() == &0 {
-            return Err("can't read response when buff_size is 0")
-        }
         let payload = MspSetServoMixer {
             index: index,
             servo_rule: servo_rule,
@@ -1169,11 +1346,26 @@ impl Msp {
             data: payload.pack().to_vec(),
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        return match self.set_servo_mixer_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to set servo mixer")
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
+
+            return match self.set_servo_mixer_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to set servo mixer, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to set servo mixer")
+            },
         };
     }
 
@@ -1181,18 +1373,30 @@ impl Msp {
         if &self.core.buff_size() == &0 {
             return Err("can't read response when buff_size is 0")
         }
+
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_INAV_SERVO_MIXER as u16,
             direction: MspPacketDirection::ToFlightController,
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        let payload = match self.servo_mixer.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get servo mixer")
+            return match self.servo_mixer.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => return Err("failed to get servo mixer, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get servo mixer")
+            },
+        }?;
 
         let mut rules = vec![];
         let len = MspServoMixer::packed_bytes();
@@ -1219,15 +1423,26 @@ impl Msp {
             data: payload.pack().to_vec(),
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
-        return match self.set_servo_configs_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to set servo config")
+            return match self.set_servo_configs_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to set servo config, broken channel")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to set servo config")
+            },
         };
     }
 
@@ -1243,12 +1458,23 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        let payload = match self.servo_configs.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get servo configs")
+            return match self.servo_configs.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => return Err("failed to get servo configs, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get servo configs")
+            },
+        }?;
 
         let mut servo_configs = vec![];
         let len = MspServoConfig::packed_bytes();
@@ -1270,15 +1496,26 @@ impl Msp {
             data: rx_map.pack().to_vec(),
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
-        return match self.set_rx_map_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed set rx map rules")
+            return match self.set_rx_map_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed set rx map rules, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed set rx map rules")
+            },
         };
     }
 
@@ -1293,12 +1530,23 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        let payload = match self.rx_map.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get rx map rules")
+            return match self.rx_map.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => return Err("failed to get rx map rules, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get rx map rules")
+            },
+        }?;
 
         return Ok(MspRxMap::unpack_from_slice(&payload).unwrap());
     }
@@ -1318,7 +1566,7 @@ impl Msp {
             id: *id
         };
 
-        self.set_setting(&payload.pack(), value).await?;
+        self._set_setting(&payload.pack(), value).await?;
         Ok(id)
     }
 
@@ -1326,10 +1574,10 @@ impl Msp {
         let mut payload = name.as_bytes().to_vec();
         payload.push(b'\0');
 
-        return self.set_setting(&payload, value).await;
+        return self._set_setting(&payload, value).await;
     }
 
-    pub async fn set_setting(&self, id: &[u8], value: &[u8]) -> Result<(), &str> {
+    async fn _set_setting(&self, id: &[u8], value: &[u8]) -> Result<(), &str> {
         let mut payload = id.to_vec();
         payload.extend(value);
 
@@ -1342,15 +1590,26 @@ impl Msp {
             data: payload,
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
-        return match self.set_setting_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to set setting")
+            return match self.set_setting_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to set setting, channel closed")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap(); // check error from channel
+                println!("{:?}", e);
+                Err("failed to set setting")
+            },
         };
     }
 
@@ -1358,16 +1617,16 @@ impl Msp {
         if &self.core.buff_size() == &0 {
             return Err("can't read response when buff_size is 0")
         }
-        self.request_setting_info_by_name(name).await?;
-        return Ok(self.receive_setting_info().await?);
+        self._request_setting_info_by_name(name).await?;
+        return Ok(self._receive_setting_info().await?);
     }
 
     pub async fn get_setting_info_by_id(&self, id: &u16) -> Result<SettingInfo, &str> {
         if &self.core.buff_size() == &0 {
             return Err("can't read response when buff_size is 0")
         }
-        self.request_setting_info_by_id(id).await?;
-        return Ok(self.receive_setting_info().await?);
+        self._request_setting_info_by_id(id).await?;
+        return Ok(self._receive_setting_info().await?);
     }
 
     // TODO: return iteratable stream here
@@ -1407,36 +1666,51 @@ impl Msp {
         return try_join_all(setting_info_futures).await;
     }
 
-    async fn request_setting_info_by_id(&self, id: &u16) -> Result<(), &str> {
+    async fn _request_setting_info_by_id(&self, id: &u16) -> Result<(), &str> {
         let payload = MspSettingInfoRequest {
             null: 0,
             id: *id,
         };
 
-        return self.request_setting_info(payload.pack().to_vec()).await;
+        return self._request_setting_info(payload.pack().to_vec()).await;
     }
 
-    async fn request_setting_info_by_name(&self, name: &str) -> Result<(), &str> {
+    async fn _request_setting_info_by_name(&self, name: &str) -> Result<(), &str> {
         let mut payload = name.as_bytes().to_vec();
         payload.push(b'\0');
-        return self.request_setting_info(payload).await;
+        return self._request_setting_info(payload).await;
     }
 
-    async fn request_setting_info(&self, id: Vec<u8>) -> Result<(), &str> {
+    async fn _request_setting_info(&self, id: Vec<u8>) -> Result<(), &str> {
         let packet = MspPacket {
             cmd: MspCommandCode::MSP2_COMMON_SETTING_INFO as u16,
             direction: MspPacketDirection::ToFlightController,
             data: id,
         };
 
-        self.core.write(packet).await;
-        Ok(())
+        return select! {
+            _ = self.core.write(packet).fuse() => Ok(()),
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap(); // check error from channel
+                println!("{:?}", e);
+                Err("failed to requests setting_info")
+            },
+        };
     }
 
-    async fn receive_setting_info(&self) -> Result<SettingInfo, &str> {
-        let payload = match self.setting_info.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get setting info"),
+    async fn _receive_setting_info(&self) -> Result<SettingInfo, &str> {
+        let payload = select! {
+            p_res = self.setting_info.recv().fuse() => {
+                match p_res {
+                    Ok(r) => r,
+                    Err(_) => return Err("failed to get setting info, channel closed"),
+                }
+            },
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap(); // check error from channel
+                println!("{:?}", e);
+                return Err("failed to get setting info");
+            },
         };
 
         let name = Msp::str_from_u8_nul_utf8(&payload).unwrap();
@@ -1484,12 +1758,23 @@ impl Msp {
             data: vec![], // pass nothing to get all settings
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        let payload = match self.pg_settings.recv().await {
-            Ok(r) => r,
-            Err(_) => return Err("failed to get pg settings")
+            return match self.pg_settings.recv().await {
+                Ok(r) => Ok(r),
+                Err(_) => return Err("failed to get pg settings, channel closed")
+            };
         };
+
+        let payload = select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap();
+                println!("{:?}", e);
+                Err("failed to get pg settings")
+            },
+        }?;
 
         let mut setting_ids = vec![];
         let len = MspSettingGroup::packed_bytes();
@@ -1518,15 +1803,26 @@ impl Msp {
             data: payload,
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(addr);
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(addr);
+            }
 
-        return match self.write_char_ack.recv().await {
-            Ok(_) => Ok(addr),
-            Err(_) => Err("failed to write char")
+            return match self.write_char_ack.recv().await {
+                Ok(_) => Ok(addr),
+                Err(_) => Err("failed to write char, Error")
+            };
+        };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap(); // check error from channel
+                println!("{:?}", e);
+                Err("failed to write char")
+            },
         };
     }
 
@@ -1537,16 +1833,26 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
+            return match self.write_eeprom_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to write to eeprom, channel closed")
+            };
+        };
 
-        return match self.write_eeprom_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to write to eeprom")
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap(); // check error from channel
+                println!("{:?}", e);
+                Err("failed to write to eeprom")
+            },
         };
     }
 
@@ -1573,7 +1879,7 @@ impl Msp {
 
             return match self.set_raw_rc_ack.recv().await {
                 Ok(_) => Ok(()),
-                Err(e) => Err("failed to write raw rc, channel closed")
+                Err(_) => Err("failed to write raw rc, channel closed")
             };
         };
 
@@ -1594,16 +1900,27 @@ impl Msp {
             data: vec![],
         };
 
-        self.core.write(packet).await;
+        let write_fn = async {
+            self.core.write(packet).await;
 
-        if &self.core.buff_size() == &0 {
-            return Ok(());
-        }
+            if &self.core.buff_size() == &0 {
+                return Ok(());
+            }
 
-        return match self.reset_conf_ack.recv().await {
-            Ok(_) => Ok(()),
-            Err(_) => Err("failed to reset eeprom")
+            return match self.reset_conf_ack.recv().await {
+                Ok(_) => Ok(()),
+                Err(_) => Err("failed to reset eeprom, channel closed")
+            };
         };
+
+        return select! {
+            p_res = write_fn.fuse() => p_res,
+            e_res = self.core.msp_error_recv.recv().fuse() => {
+                let e = e_res.unwrap(); // check error from channel
+                println!("{:?}", e);
+                Err("failed to reset eeprom")
+            },
+        }
     }
 
     pub async fn reboot(&self) -> Result<(), &str> {

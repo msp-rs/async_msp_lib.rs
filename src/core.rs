@@ -166,7 +166,6 @@ impl Core {
                     Err(e) => {
                         eprintln!("read read read");
                         msp_error_send.send(e).await;
-                        // break;
                     }
                 };
                 task::yield_now().await;
@@ -194,7 +193,7 @@ impl Core {
             }
             drop(temp_lock_guard);
 
-            'outer: loop {
+            loop {
                 // lock here counter for sent packets
                 // if counter is more then buffer size(10), lock then 10 turn the value to false and continue the loop
                 // essentially waiting for value to change
@@ -243,7 +242,6 @@ impl Core {
                         Err(e) => {
                             eprintln!("write write write");
                             msp_error_send.send(e).await;
-                            // break 'outer;
                             *(lock.lock().await) += 1;
                         }
                     }
