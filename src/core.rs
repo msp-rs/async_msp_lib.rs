@@ -7,6 +7,7 @@ use multiwii_serial_protocol_v2::{MspPacket, MspParser};
 
 use async_std::sync::{channel, Arc, Condvar, Mutex, Sender, Receiver};
 use async_std::task;
+use async_std::io::{Error, ErrorKind};
 
 use std::time::{Duration, Instant};
 use std::collections::VecDeque;
@@ -21,7 +22,7 @@ pub struct Core {
 
     msp_reader_recv: Receiver<MspPacket>,
     msp_writer_send: Sender<MspPacket>,
-    msp_writer_recv: Receiver<MspPacket>,
+    msp_error_recv: Receiver<Error>,
 }
 
 pub struct MspTaskHandle {
@@ -49,6 +50,7 @@ impl Core {
     ) -> (Core, MspTaskHandle) {
         let (msp_reader_send, msp_reader_recv) = channel::<MspPacket>(4096);
         let (msp_writer_send, msp_writer_recv) = channel::<MspPacket>(1024);
+        let (msp_error_send, msp_error_recv) = channel::<Error>(1);
 
         let parser = MspParser::new();
         let parser_locked = Arc::new(Mutex::new(parser));
@@ -61,12 +63,12 @@ impl Core {
 
         let input_handle = if buff_size > 0 {
             let reader = stream.clone();
-            Some(Core::process_input(reader, parser_locked.clone(), msp_reader_send, serial_write_lock, elapsed_queue_lock, verbose.clone()))
+            Some(Core::process_input(reader, parser_locked.clone(), msp_reader_send, serial_write_lock, msp_error_send.clone(), elapsed_queue_lock, verbose.clone()))
         } else {
             None
         };
 
-        let output_handle = Core::process_output(stream, msp_writer_recv.clone(), serial_write_lock_clone, msp_write_delay.clone(), elapsed_queue_lock_clone, verbose.clone());
+        let output_handle = Core::process_output(stream, msp_writer_recv, serial_write_lock_clone, msp_write_delay.clone(), msp_error_send, elapsed_queue_lock_clone, verbose.clone());
 
         return (Core {
             buff_size,
@@ -75,33 +77,31 @@ impl Core {
             parser_locked,
             msp_reader_recv,
             msp_writer_send,
-            msp_writer_recv,
+            msp_error_recv,
         }, MspTaskHandle {
             input_handle,
             output_handle
         });
     }
 
-    pub async fn read(&self) -> std::option::Option<MspPacket> {
-        return match self.msp_reader_recv.recv().await {
-            Err(_) => None,
-            Ok(packet) => Some(packet),
-        };
+    pub async fn read(&self) -> MspPacket {
+        return self.msp_reader_recv.recv().await.unwrap();
     }
 
-    pub async fn write(&self, packet: MspPacket)  {
+    pub async fn write(&self, packet: MspPacket) {
         self.msp_writer_send.send(packet).await;
     }
 
-    // TODO: return joinhandler, so we can stop the tasks on drop
-    // TODO: rewrite using stream api with inspect, each command will inspect
-    //       and passthorugh to next.
-    //       if the stream contained response for command, it will return the read/write function
+    pub async fn error(&self) -> Error {
+        return self.msp_error_recv.recv().await.unwrap();
+    }
+
     fn process_input(
         serial: impl Send + std::io::Read + 'static,
         parser_locked: Arc<Mutex<MspParser>>,
         msp_reader_send: Sender<MspPacket>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
+        msp_error_send: Sender<Error>,
         elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
         verbose: bool,
     ) -> async_std::task::JoinHandle<()> {
@@ -141,12 +141,12 @@ impl Core {
                             Ok(None) => ()
                         }
                     }
-                    Err(ref e) if e.kind() == async_std::io::ErrorKind::TimedOut => {
+                    Err(ref e) if e.kind() == ErrorKind::TimedOut => {
                         if verbose {
                             println!("read timeout");
                         }
                     }
-                    Err(e) => eprintln!("{:?}", e),
+                    Err(e) => msp_error_send.send(e).await
                 };
                 task::yield_now().await;
             }
@@ -159,6 +159,7 @@ impl Core {
         msp_writer_recv: Receiver<MspPacket>,
         serial_write_lock: Arc<(Mutex<usize>, Condvar)>,
         write_delay: Duration,
+        msp_error_send: Sender<Error>,
         elapsed_queue_lock: Arc<Mutex<VecDeque<Instant>>>,
         verbose: bool,
     ) -> async_std::task::JoinHandle<()> {
@@ -214,12 +215,12 @@ impl Core {
 
                             break;
                         },
-                        Err(ref e) if e.kind() == async_std::io::ErrorKind::TimedOut => {
+                        Err(ref e) if e.kind() == ErrorKind::TimedOut => {
                             // controller is busy/serial buffer is full, sleep and attempt write again
                             task::yield_now().await;
                         },
                         Err(e) => {
-                            eprintln!("failed to write{:?}", e);
+                            msp_error_send.send(e).await;
                             *(lock.lock().await) += 1;
                         }
                     }
