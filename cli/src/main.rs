@@ -119,7 +119,7 @@ impl std::io::Read for ClonableSerialPort {
 async fn main() {
 
     let matches = App::new("msp")
-        .version("0.1.11")
+        .version("0.1.12")
         .author("Ilya G. <amfernusus@gmail.com>")
         .about("Interact with msp flight controller")
         .subcommand(
