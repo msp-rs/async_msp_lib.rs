@@ -25,3 +25,7 @@ features = ["unstable", "attributes"]
 
 [features]
 suppport_int32_setting_type = ["multiwii_serial_protocol_v2/suppport_int32_setting_type"]
+
+[workspace]
+members = ["cli", "bind"]
+default-members = ["cli", "bind"]
