@@ -1695,11 +1695,7 @@ async fn dump_common_setting(inav: &Msp) -> Result<Vec<String>, &str> {
 }
 
 fn open_msp(port: Option<&str>, flavor: &FcFlavor, buff: usize, verbose: bool) -> (Msp, MspTaskHandle) {
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
-    let serial_timeout = Duration::from_millis(1);
-
-    #[cfg(target_os = "linux")]
-    let serial_timeout = Duration::from_millis(0);
+    let serial_timeout = Duration::from_millis(50);
 
     match port {
         Some(p) => {
