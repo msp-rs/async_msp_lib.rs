@@ -1134,7 +1134,6 @@ async fn upload_aux<'a, 'b>(inav: &'a Msp, value: &'b str) -> Result<&'b str, &'
 
 async fn dump_aux(inav: &Msp) -> Result<Vec<String>, &str> {
     let ranges = inav.get_mode_ranges().await?;
-    println!("received all auxes about to print");
     let dump: Vec<String> = ranges
         .iter()
         .enumerate()
