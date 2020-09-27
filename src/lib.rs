@@ -3,15 +3,13 @@ extern crate multiwii_serial_protocol_v2;
 extern crate serialport;
 extern crate packed_struct;
 
-use multiwii_serial_protocol_v2::{MspCommandCode, MspPacket, MspPacketDirection};
-use multiwii_serial_protocol_v2::structs::*;
+use multiwii_serial_protocol_v2::{MspCommandCode, MspPacket, MspPacketDirection, structs::*};
 use packed_struct::prelude::*;
 
-use async_std::sync::{channel, Sender, Receiver};
-use async_std::{io, task};
-use async_std::future;
+use async_std::{io, task, future, sync::{channel, Arc, Mutex, Sender, Receiver}};
 use std::time::Duration;
 use std::convert::TryInto;
+use std::collections::HashMap;
 use futures::{future::{FutureExt, try_join_all}, select};
 use async_std::prelude::*;
 
@@ -177,269 +175,35 @@ impl FlashDataFile {
 pub struct Msp {
     core: core::Core,
 
-    mode_ranges: Receiver<Vec<u8>>,
-    set_mode_range_ack: Receiver<Vec<u8>>,
-
-    motor_mixers: Receiver<Vec<u8>>,
-    set_motor_mixer_ack: Receiver<Vec<u8>>,
-
-    osd_configs: Receiver<Vec<u8>>,
-    set_osd_config_ack: Receiver<Vec<u8>>,
-    osd_layout_count: Receiver<Vec<u8>>,
-    osd_layout_items: Receiver<Vec<u8>>,
-    set_osd_layout_item_ack: Receiver<Vec<u8>>,
-
-    serial_settings: Receiver<Vec<u8>>,
-    set_serial_settings_ack: Receiver<Vec<u8>>,
-
-    features: Receiver<Vec<u8>>,
-    set_features_ack: Receiver<Vec<u8>>,
-
-    servo_mix_rules: Receiver<Vec<u8>>,
-    set_servo_mix_rules_ack: Receiver<Vec<u8>>,
-
-    servo_configs: Receiver<Vec<u8>>,
-    set_servo_configs_ack: Receiver<Vec<u8>>,
-
-    servo_mixer: Receiver<Vec<u8>>,
-    set_servo_mixer_ack: Receiver<Vec<u8>>,
-
-    rx_map: Receiver<Vec<u8>>,
-    set_rx_map_ack: Receiver<Vec<u8>>,
-
-    pg_settings: Receiver<Vec<u8>>,
-    setting_info: Receiver<Vec<u8>>,
-    set_setting_ack: Receiver<Vec<u8>>,
-
-    write_char_ack: Receiver<Vec<u8>>,
-
-    set_raw_rc_ack: Receiver<Vec<u8>>,
-
-    summary: Receiver<Vec<u8>>,
-    chunk: Receiver<Vec<u8>>,
-
-    reset_conf_ack: Receiver<Vec<u8>>,
-
-    write_eeprom_ack: Receiver<Vec<u8>>,
+    subscriptions_lock: Arc<Mutex<HashMap<u16, (Sender<Vec<u8>>, Receiver<Vec<u8>>)>>>,
 }
 
 impl Msp {
     pub fn open(stream: impl Send + std::io::Read + std::io::Write + Clone + 'static,
                 buff_size: usize, write_delay: Duration, verbose: bool) -> (Msp, core::MspTaskHandle)  {
 
-        let mode_ranges = channel::<Vec<u8>>(100);
-        let set_mode_range_ack = channel::<Vec<u8>>(100);
-
-        let motor_mixers = channel::<Vec<u8>>(100);
-        let set_motor_mixer_ack = channel::<Vec<u8>>(100);
-
-        let osd_configs = channel::<Vec<u8>>(100);
-        let set_osd_config_ack = channel::<Vec<u8>>(100);
-        let osd_layout_count = channel::<Vec<u8>>(100);
-        let osd_layout_items = channel::<Vec<u8>>(100);
-        let set_osd_layout_item_ack = channel::<Vec<u8>>(100);
-
-        let serial_settings = channel::<Vec<u8>>(100);
-        let set_serial_settings_ack = channel::<Vec<u8>>(100);
-
-        let features = channel::<Vec<u8>>(100);
-        let set_features_ack = channel::<Vec<u8>>(100);
-
-        let servo_mix_rules = channel::<Vec<u8>>(100);
-        let set_servo_mix_rules_ack = channel::<Vec<u8>>(100);
-
-        let servo_mixer = channel::<Vec<u8>>(100);
-        let set_servo_mixer_ack = channel::<Vec<u8>>(100);
-
-        let servo_configs = channel::<Vec<u8>>(100);
-        let set_servo_configs_ack = channel::<Vec<u8>>(100);
-
-        let rx_map = channel::<Vec<u8>>(100);
-        let set_rx_map_ack = channel::<Vec<u8>>(100);
-
-        let pg_settings = channel::<Vec<u8>>(100);
-        let setting_info = channel::<Vec<u8>>(100);
-        let set_setting_ack = channel::<Vec<u8>>(100);
-
-        let write_char_ack = channel::<Vec<u8>>(100);
-
-        let set_raw_rc_ack = channel::<Vec<u8>>(100);
-
-        let summary = channel::<Vec<u8>>(100);
-        let chunk = channel::<Vec<u8>>(4096);
-
-        let reset_conf_ack = channel::<Vec<u8>>(1);
-
-        let write_eeprom_ack = channel::<Vec<u8>>(1);
-
-
         let (core, handle) = core::Core::open(stream, buff_size, write_delay, verbose);
 
         let msp = Msp {
             core,
 
-            mode_ranges: mode_ranges.1,
-            set_mode_range_ack: set_mode_range_ack.1,
-
-            motor_mixers: motor_mixers.1,
-            set_motor_mixer_ack: set_motor_mixer_ack.1,
-
-            osd_configs: osd_configs.1,
-            set_osd_config_ack: set_osd_config_ack.1,
-            osd_layout_count: osd_layout_count.1,
-            osd_layout_items: osd_layout_items.1,
-            set_osd_layout_item_ack: set_osd_layout_item_ack.1,
-
-            serial_settings: serial_settings.1,
-            set_serial_settings_ack: set_serial_settings_ack.1,
-
-            features: features.1,
-            set_features_ack: set_features_ack.1,
-
-            servo_mix_rules: servo_mix_rules.1,
-            set_servo_mix_rules_ack: set_servo_mix_rules_ack.1,
-
-            servo_mixer: servo_mixer.1,
-            set_servo_mixer_ack: set_servo_mixer_ack.1,
-
-            servo_configs: servo_configs.1,
-            set_servo_configs_ack: set_servo_configs_ack.1,
-
-            rx_map: rx_map.1,
-            set_rx_map_ack: set_rx_map_ack.1,
-
-            pg_settings: pg_settings.1,
-            setting_info: setting_info.1,
-            set_setting_ack: set_setting_ack.1,
-
-            write_char_ack: write_char_ack.1,
-
-            set_raw_rc_ack: set_raw_rc_ack.1,
-
-            summary: summary.1,
-            chunk: chunk.1,
-
-            reset_conf_ack: reset_conf_ack.1,
-
-            write_eeprom_ack: write_eeprom_ack.1,
+            subscriptions_lock: Arc::new(Mutex::new(HashMap::new())),
         };
 
         if buff_size == 0 {
             return (msp, handle);
         }
 
-        Msp::process_route(
-            msp.core.clone(),
-
-            mode_ranges.0,
-            set_mode_range_ack.0,
-
-            motor_mixers.0,
-            set_motor_mixer_ack.0,
-
-            osd_configs.0,
-            set_osd_config_ack.0,
-            osd_layout_count.0,
-            osd_layout_items.0,
-            set_osd_layout_item_ack.0,
-
-            serial_settings.0,
-            set_serial_settings_ack.0,
-
-            features.0,
-            set_features_ack.0,
-
-            servo_mix_rules.0,
-            set_servo_mix_rules_ack.0,
-
-            servo_mixer.0,
-            set_servo_mixer_ack.0,
-
-            servo_configs.0,
-            set_servo_configs_ack.0,
-
-            rx_map.0,
-            set_rx_map_ack.0,
-
-            pg_settings.0,
-            setting_info.0,
-            set_setting_ack.0,
-
-            write_char_ack.0,
-
-            set_raw_rc_ack.0,
-
-            summary.0,
-            chunk.0,
-
-            reset_conf_ack.0,
-
-            write_eeprom_ack.0,
-        );
+        Msp::process_subs(msp.core.clone(), msp.subscriptions_lock.clone());
 
         return (msp, handle);
     }
 
 
-    // TODO: maybe replace this function with 
-    // https://docs.rs/async-std/1.6.3/async_std/stream/trait.Stream.html#method.scan
-    // - or -
-    // https://docs.rs/async-std/1.6.3/async_std/stream/trait.Stream.html#method.find
-    fn process_route(
-        core: core::Core,
-
-        mode_ranges_send: Sender<Vec<u8>>,
-        set_mode_range_ack_send: Sender<Vec<u8>>,
-
-        motor_mixers_send: Sender<Vec<u8>>,
-        set_motor_mixer_ack_send: Sender<Vec<u8>>,
-
-        osd_configs_send: Sender<Vec<u8>>,
-        set_osd_config_ack_send: Sender<Vec<u8>>,
-        osd_layout_count_send: Sender<Vec<u8>>,
-        osd_layout_items_send: Sender<Vec<u8>>,
-        set_osd_layout_item_send_ack: Sender<Vec<u8>>,
-
-        serial_settings_send: Sender<Vec<u8>>,
-        set_serial_settings_ack_send: Sender<Vec<u8>>,
-
-        features_send: Sender<Vec<u8>>,
-        set_features_ack_send: Sender<Vec<u8>>,
-
-        servo_mix_rules_send: Sender<Vec<u8>>,
-        set_servo_mix_rules_ack_send: Sender<Vec<u8>>,
-
-        servo_mixer_send: Sender<Vec<u8>>,
-        set_servo_mixer_ack_send: Sender<Vec<u8>>,
-
-        servo_configs_send: Sender<Vec<u8>>,
-        set_servo_configs_ack_send: Sender<Vec<u8>>,
-
-        rx_map_send: Sender<Vec<u8>>,
-        set_rx_map_ack_send: Sender<Vec<u8>>,
-
-        pg_settings: Sender<Vec<u8>>,
-        setting_info: Sender<Vec<u8>>,
-        set_setting_ack: Sender<Vec<u8>>,
-
-        write_char_ack: Sender<Vec<u8>>,
-
-        set_raw_rc_ack: Sender<Vec<u8>>,
-
-        summary_send: Sender<Vec<u8>>,
-        chunk_send: Sender<Vec<u8>>,
-
-        reset_conf_ack: Sender<Vec<u8>>,
-
-        write_eeprom_ack: Sender<Vec<u8>>,
-    ) {
+    fn process_subs(core: core::Core, subs_lock: Arc<Mutex<HashMap<u16, (Sender<Vec<u8>>, Receiver<Vec<u8>>)>>>) {
         task::spawn(async move {
             loop {
-
                 let packet = core.read().await;
-
-                let cmd = MspCommandCode::from_primitive(packet.cmd);
-                let packet_length = packet.data.len();
 
                 let result = match packet.direction {
                     MspPacketDirection::FromFlightController => packet.data,
@@ -450,60 +214,31 @@ impl Msp {
                     _ => continue,
                 };
 
-                let channel = match cmd {
-                    Some(MspCommandCode::MSP_MODE_RANGES) => &mode_ranges_send,
-                    Some(MspCommandCode::MSP_SET_MODE_RANGE) => &set_mode_range_ack_send,
+                let subs = &*subs_lock.lock().await;
+                let (s, _) = subs.get(&packet.cmd).unwrap();
 
-                    Some(MspCommandCode::MSP2_MOTOR_MIXER) => &motor_mixers_send,
-                    Some(MspCommandCode::MSP2_SET_MOTOR_MIXER) => &set_motor_mixer_ack_send,
-
-                    Some(MspCommandCode::MSP_OSD_CONFIG) => &osd_configs_send,
-                    Some(MspCommandCode::MSP_SET_OSD_CONFIG) => &set_osd_config_ack_send,
-                    // if payload size in osd_layout_items is bigger then 2 bytes its means we got the count
-                    // else we got list of items in the layout
-                    Some(MspCommandCode::MSP2_INAV_OSD_LAYOUTS) => if packet_length > 2 { &osd_layout_items_send } else { &osd_layout_count_send },
-                    Some(MspCommandCode::MSP2_INAV_OSD_SET_LAYOUT_ITEM) => &set_osd_layout_item_send_ack,
-
-                    Some(MspCommandCode::MSP2_SERIAL_CONFIG) => &serial_settings_send,
-                    Some(MspCommandCode::MSP2_SET_SERIAL_CONFIG) => &set_serial_settings_ack_send,
-
-                    Some(MspCommandCode::MSP_FEATURE) => &features_send,
-                    Some(MspCommandCode::MSP_SET_FEATURE) => &set_features_ack_send,
-
-                    Some(MspCommandCode::MSP_SERVO_MIX_RULES) => &servo_mix_rules_send,
-                    Some(MspCommandCode::MSP_SET_SERVO_MIX_RULE) => &set_servo_mix_rules_ack_send,
-
-                    Some(MspCommandCode::MSP2_INAV_SERVO_MIXER) => &servo_mixer_send,
-                    Some(MspCommandCode::MSP2_INAV_SET_SERVO_MIXER) => &set_servo_mixer_ack_send,
-
-                    Some(MspCommandCode::MSP_SERVO_CONFIGURATIONS) => &servo_configs_send,
-                    Some(MspCommandCode::MSP_SET_SERVO_CONFIGURATION) => &set_servo_configs_ack_send,
-
-                    Some(MspCommandCode::MSP_RX_MAP) => &rx_map_send,
-                    Some(MspCommandCode::MSP_SET_RX_MAP) => &set_rx_map_ack_send,
-
-                    Some(MspCommandCode::MSP2_COMMON_PG_LIST) => &pg_settings,
-                    Some(MspCommandCode::MSP2_COMMON_SETTING_INFO) => &setting_info,
-                    Some(MspCommandCode::MSP2_COMMON_SET_SETTING) => &set_setting_ack,
-
-                    Some(MspCommandCode::MSP_OSD_CHAR_WRITE) => &write_char_ack,
-
-                    Some(MspCommandCode::MSP_SET_RAW_RC) => &set_raw_rc_ack,
-
-                    Some(MspCommandCode::MSP_DATAFLASH_SUMMARY) => &summary_send,
-                    Some(MspCommandCode::MSP_DATAFLASH_READ) => &chunk_send,
-
-                    Some(MspCommandCode::MSP_RESET_CONF) => &reset_conf_ack,
-
-                    Some(MspCommandCode::MSP_EEPROM_WRITE) => &write_eeprom_ack,
-
-                    _ => continue,
-                };
-
-                channel.send(result).await;
-                // TODO: create debug(--verbose) flag for additional print on demand
+                match s.try_send(result) {
+                    Err(_) => eprintln!("failed to send, channel full {}", &packet.cmd),
+                    _ => (),
+                }
             }
         });
+    }
+
+    async fn subscribe(&self, cmd: u16, size: usize) -> Receiver<Vec<u8>> {
+        let mut subscriptions = self.subscriptions_lock.lock().await;
+
+        // clone previuse receiver, if no one is reading from this channel
+        // this means once a channel is registered, it cannot be undone
+        let (_, r) = subscriptions.entry(cmd).or_insert_with(|| { channel::<Vec<u8>>(size) });
+        r.clone()
+    }
+
+    async fn write_ack(&self, pkt: MspPacket) -> Result<Vec<u8>, &str> {
+        let ack_rec = self.subscribe(pkt.cmd, self.core.buff_size()).await;
+        self.core.write(pkt).await;
+        let res = ack_rec.recv().await.unwrap();
+        Ok(res)
     }
 
     // TODO: because this is a serial protocol, we cannot allow two reads of the file at the same time.
@@ -514,10 +249,11 @@ impl Msp {
         // await for summary
         let summary = self.flash_summary().await.unwrap();
         let used_size = summary.used_size_bytes;
+        let chunk_recv = self.subscribe(MspCommandCode::MSP_DATAFLASH_READ as u16, 4096).await;
 
         return FlashDataFile {
             core: self.core.clone(),
-            chunk_recv: self.chunk.clone(),
+            chunk_recv: chunk_recv,
             used_size: used_size,
             next_address: 0u32,
             received_address: 0u32,
@@ -567,6 +303,7 @@ impl Msp {
 
         let mut accumulated_payload = vec![vec![]; blocks_count as usize];
         loop {
+            let ack_chunk = self.subscribe(MspCommandCode::MSP_DATAFLASH_READ as u16, 4096).await;
             // TODO: make it fold async
             for addr in &expected_address {
                 let payload = MspDataFlashRead {
@@ -586,7 +323,7 @@ impl Msp {
 
             loop {
                 // TODO: maybe let the caller handle the timeout?
-                let timeout_res = future::timeout(Duration::from_millis(500), self.chunk.recv()).await;
+                let timeout_res = future::timeout(Duration::from_millis(500), ack_chunk.recv()).await;
 
                 if !timeout_res.is_ok() {
                     self.core.reset_parser().await;
@@ -634,17 +371,8 @@ impl Msp {
             data: vec![],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.summary.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => Err("failed to get flash summary, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get flash summary")
@@ -689,13 +417,12 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
-
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_mode_range_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to set mode range, channel closed")
             };
@@ -721,17 +448,8 @@ impl Msp {
             data: vec![],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.mode_ranges.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => return Err("failed to get mode_ranges, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get mode_ranges")
@@ -774,13 +492,12 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
-
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_motor_mixer_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to set motor mixer, channel closed")
             };
@@ -806,17 +523,8 @@ impl Msp {
             data: vec![],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.motor_mixers.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => return Err("failed to get motor mixers, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get motor mixers")
@@ -851,13 +559,12 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
-
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_osd_config_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to set osd item, channel closed")
             };
@@ -888,13 +595,13 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
 
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_osd_config_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to set osd config, channel closed")
             };
@@ -920,16 +627,8 @@ impl Msp {
             data: vec![],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-            return match self.osd_configs.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => return Err("failed to get osd config, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get osd config")
@@ -966,13 +665,13 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
 
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_osd_layout_item_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to set osd layout item, channel closed")
             };
@@ -987,6 +686,10 @@ impl Msp {
         };
     }
 
+    // warning: sending MSP2_INAV_OSD_LAYOUTS will return the count of layouts,
+    // it shouldn't be called concurrently with get_osd_layout_items.
+    // because the packet will be deliverd to one of the receivers
+
     pub async fn get_osd_layout_count(&self) -> Result<MspOsdLayouts, &str> {
         if &self.core.buff_size() == &0 {
             return Err("can't read response when buff_size is 0")
@@ -998,17 +701,8 @@ impl Msp {
             data: vec![],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.osd_layout_count.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => return Err("failed to get layout count, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get layout count")
@@ -1032,17 +726,8 @@ impl Msp {
             data: vec![layout_index],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.osd_layout_items.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => Err("failed to get layout items, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get layout items")
@@ -1095,13 +780,13 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
 
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_serial_settings_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to set serial settings, channel closed")
             };
@@ -1127,17 +812,8 @@ impl Msp {
             data: vec![],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.serial_settings.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => return Err("failed to get serial settings, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get serial settings")
@@ -1182,11 +858,11 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
-            return match self.set_features_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to set features, channel closed")
             };
@@ -1212,17 +888,8 @@ impl Msp {
             data: vec![],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.features.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => return Err("failed to get features, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get features")
@@ -1253,13 +920,12 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
-
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_servo_mix_rules_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to set servo mix rule, channel closed")
             };
@@ -1285,17 +951,8 @@ impl Msp {
             data: vec![],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.servo_mix_rules.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => return Err("failed to get servo mix rule, closed channel")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get servo mix rule")
@@ -1328,13 +985,13 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
 
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_servo_mixer_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to set servo mixer, channel closed")
             };
@@ -1360,17 +1017,8 @@ impl Msp {
             data: vec![],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.servo_mixer.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => return Err("failed to get servo mixer, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get servo mixer")
@@ -1403,13 +1051,12 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
-
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_servo_configs_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to set servo config, broken channel")
             };
@@ -1436,17 +1083,8 @@ impl Msp {
             data: vec![],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.servo_configs.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => return Err("failed to get servo configs, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get servo configs")
@@ -1474,13 +1112,12 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
-
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_rx_map_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed set rx map rules, channel closed")
             };
@@ -1506,17 +1143,8 @@ impl Msp {
             data: vec![],
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.rx_map.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => return Err("failed to get rx map rules, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get rx map rules")
@@ -1552,6 +1180,7 @@ impl Msp {
         return self._set_setting(&payload, value).await;
     }
 
+    // TODO: should we use stream instead of executing this code for each method
     async fn _set_setting(&self, id: &[u8], value: &[u8]) -> Result<(), &str> {
         let mut payload = id.to_vec();
         payload.extend(value);
@@ -1566,13 +1195,12 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
-
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_setting_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to set setting, channel closed")
             };
@@ -1672,8 +1300,9 @@ impl Msp {
     }
 
     async fn _receive_setting_info(&self) -> Result<SettingInfo, &str> {
+        let ack_rec = self.subscribe(MspCommandCode::MSP2_COMMON_SETTING_INFO as u16, self.core.buff_size()).await;
         let payload = select! {
-            p_res = self.setting_info.recv().fuse() => {
+            p_res = ack_rec.recv().fuse() => {
                 match p_res {
                     Ok(r) => r,
                     Err(_) => return Err("failed to get setting info, channel closed"),
@@ -1730,17 +1359,8 @@ impl Msp {
             data: vec![], // pass nothing to get all settings
         };
 
-        let write_fn = async {
-            self.core.write(packet).await;
-
-            return match self.pg_settings.recv().await {
-                Ok(r) => Ok(r),
-                Err(_) => return Err("failed to get pg settings, channel closed")
-            };
-        };
-
         let payload = select! {
-            p_res = write_fn.fuse() => p_res,
+            p_res = self.write_ack(packet).fuse() => p_res,
             e_res = self.core.error().fuse() => {
                 eprintln!("{:?}", e_res);
                 Err("failed to get pg settings")
@@ -1775,13 +1395,13 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
 
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(addr);
             }
 
-            return match self.write_char_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(addr),
                 Err(_) => Err("failed to write char, Error")
             };
@@ -1804,13 +1424,12 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
-
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.write_eeprom_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to write to eeprom, channel closed")
             };
@@ -1840,13 +1459,12 @@ impl Msp {
         println!("send raw_rc here");
 
         let write_fn = async {
-            self.core.write(packet).await;
-
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.set_raw_rc_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to write raw rc, channel closed")
             };
@@ -1869,13 +1487,13 @@ impl Msp {
         };
 
         let write_fn = async {
-            self.core.write(packet).await;
 
             if &self.core.buff_size() == &0 {
+                self.core.write(packet).await;
                 return Ok(());
             }
 
-            return match self.reset_conf_ack.recv().await {
+            return match self.write_ack(packet).await {
                 Ok(_) => Ok(()),
                 Err(_) => Err("failed to reset eeprom, channel closed")
             };
