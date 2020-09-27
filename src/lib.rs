@@ -16,6 +16,8 @@ use async_std::prelude::*;
 pub mod core;
 
 
+// this lib file is actually an msp client, because its designed to send msp messages and not handle them... so we should rename it into msp client
+
 pub struct MspDataFlashReplyWithData {
     pub read_address: u32,
     pub payload: Vec<u8>,
@@ -1455,8 +1457,6 @@ impl Msp {
             direction: MspPacketDirection::ToFlightController,
             data: payload.to_vec(),
         };
-
-        println!("send raw_rc here");
 
         let write_fn = async {
             if &self.core.buff_size() == &0 {
