@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 use std::collections::VecDeque;
 
 
+// its the MSP IO. responsible for reading msp from bytes and writing msp to bytes... nothing else
+
 #[derive(Clone)]
 pub struct Core {
     parser_locked: Arc<Mutex<MspParser>>,
