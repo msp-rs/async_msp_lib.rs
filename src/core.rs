@@ -57,6 +57,7 @@ impl Core {
         let parser = MspParser::new();
         let parser_locked = Arc::new(Mutex::new(parser));
 
+        // TODO: maybe we can move the serial write lock out of core into the lib.rs
         let serial_write_lock = Arc::new((Mutex::new(buff_size.clone()), Condvar::new()));
         let serial_write_lock_clone = serial_write_lock.clone();
 
