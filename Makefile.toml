@@ -49,6 +49,8 @@ workspace = false
 script = [
     "cp target/x86_64-pc-windows-gnu/release/async_msp_cli.exe dist/async_msp_cli_windows.exe",
     "cp target/x86_64-apple-darwin/release/async_msp_cli dist/async_msp_cli_darwin",
+    "cp target/arm-unknown-linux-musleabihf/release/async_msp_cli dist/async_msp_cli_linux_arm",
+    "cp target/armv7-unknown-linux-musleabihf/release/async_msp_cli dist/async_msp_cli_linux_armv7",
     "cp target/release/async_msp_cli dist/async_msp_cli_linux",
 ]
 dependencies = ["dist-folder"]
@@ -89,6 +91,8 @@ script = [
     "cp target/x86_64-pc-windows-gnu/release/async_msp_cli.exe dist/async_msp_cli_windows_int32.exe",
     "cp target/x86_64-apple-darwin/release/async_msp_cli dist/async_msp_cli_darwin_int32",
     "cp target/release/async_msp_cli dist/async_msp_cli_linux_int32",
+    "cp target/arm-unknown-linux-musleabihf/release/async_msp_cli dist/async_msp_cli_linux_arm",
+    "cp target/armv7-unknown-linux-musleabihf/release/async_msp_cli dist/async_msp_cli_linux_armv7",
 ]
 dependencies = ["dist-folder"]
 
@@ -98,6 +102,8 @@ dependencies = [
     "release",
     "release-darwin",
     "release-windows",
+    "release-arm",
+    "release-armv7",
     "copy-to-dist",
 ]
 
@@ -107,5 +113,7 @@ dependencies = [
     "release-int32",
     "release-darwin-int32",
     "release-windows-int32",
+    "release-arm",
+    "release-armv7",
     "copy-to-dist-int32",
 ]
