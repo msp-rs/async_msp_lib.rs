@@ -12,8 +12,8 @@ use async_std::{io, task};
 use async_std::future;
 use std::time::Duration;
 use std::convert::TryInto;
-use futures::future::try_join_all;
-use futures::{future::FutureExt, select};
+use futures::{future::{FutureExt, try_join_all}, select};
+use async_std::prelude::*;
 
 pub mod core;
 
