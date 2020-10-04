@@ -16,7 +16,3 @@ features = ["unstable", "attributes"]
 [lib]
 name = "libasyncmsp"
 crate-type = ["cdylib"]
-
-[tasks.release-windows]
-command = "cross"
-args = ["build", "--target", "x86_64-pc-windows-gnu", "--release"]
