@@ -18,6 +18,9 @@ pub mod core;
 
 // this lib file is actually an msp client, because its designed to send msp messages and not handle them... so we should rename it into msp client
 
+// TODO: extract mcm to separate crate and then to separate project entierly 
+
+
 pub struct MspDataFlashReplyWithData {
     pub read_address: u32,
     pub payload: Vec<u8>,
@@ -1446,6 +1449,10 @@ impl Msp {
         };
     }
 
+    // TODO: maybe create another function that accepts stream that can be iterated upon
+    //       so instead of attempting to subscribe for each message, it will just subscribe once
+    //       so instead of calling write_ack we subscribe once
+    // TODO: we want the msp set_rc to work as fast as possible, to achive that we need get allow writing without awaiting for receive somehow, and maybe we don't need to throttle it at core but at the lib write and read
     pub async fn set_raw_rc(&self, channels: Vec<u16>) -> Result<(), &str> {
         let payload = unsafe {
             use std::slice;
@@ -1477,6 +1484,67 @@ impl Msp {
                 Err("error writing raw rc")
             },
         }
+    }
+
+
+    pub async fn pipe_raw_rc(&self, chan_stream: impl Stream<Item = Vec<u16>> + std::marker::Unpin) -> Result<(), &str> {
+        let mut packets_stream = chan_stream.map(|channels| {
+            let payload = unsafe {
+                use std::slice;
+                slice::from_raw_parts(channels.as_ptr() as *mut u8, channels.len() * 2)
+            };
+
+            MspPacket {
+                cmd: MspCommandCode::MSP_SET_RAW_RC as u16,
+                direction: MspPacketDirection::ToFlightController,
+                data: payload.to_vec(),
+            }
+        });
+
+        if &self.core.buff_size() == &0 {
+            loop {
+                match packets_stream.next().await {
+                    Some(p) => self.core.write(p).await,
+                    None => return Ok(()),
+                };
+            }
+        } else {
+            return Err("we are noobs");
+        }
+
+
+        // we may want to double buffer
+        // beacuse aren't using it, we may let it go for now
+        // or we create a generic ack handler for all messages
+
+        // let ack_raw_rc = self.subscribe(MspCommandCode::MSP_SET_RAW_RC as u16, self.core.buff_size()).await;
+        // loop {
+        //     match packets_stream.next().await {
+        //         Some(p) => {
+        //             let write_fn = async {
+        //                 self.core.write(p).await;
+        //                 // TODO: waiting for ack makes every think serial
+        //                 match ack_raw_rc.recv().await {
+        //                     Ok(_) => Ok(()),
+        //                     Err(_) => return Err("failed to write raw rc, channel closed")
+        //                 }
+        //             };
+        //             select! {
+        //                 p_res = write_fn.fuse() => {
+        //                     match p_res {
+        //                         Err(_) => return Err("failed to write raw rc, channel closed"),
+        //                         _  => (),
+        //                     }
+        //                 },
+        //                 e_res = self.core.error().fuse() => {
+        //                     eprintln!("{:?}", e_res);
+        //                     return Err("error writing raw rc")
+        //                 },
+        //             }
+        //         },
+        //         None => return Ok(()),
+        //     };
+        // }
     }
 
     pub async fn reset_conf(&self) -> Result<(), &str> {
