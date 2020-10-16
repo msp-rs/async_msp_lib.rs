@@ -1,11 +1,14 @@
-A Multiwii Serial Protocol (MSP) commands implementation for Rust
+async-msp-lib
 ===========================================
 
-## Introduction
+An incomplete implementation of the MSP2 library, with some Cleanflight, Betaflight and iNav extensions
 
-An incomplete implementation of the MSP2 library, with some Cleanflight, Betaflight and iNav extensions. Allows one to cli to interact with Cleanflight, Betaflight and iNav.
+This crate aims to provide convenient API for MSP communication, by providing as effecient and asynchronous communication
 
-# Installation
+
+# Usage
+This library comes with ready [CLI](../tree/master/cli) and [C Bindings](../tree/master/bind) packages.
+But can be used directly in your rust project .
 
 MSP is available on crates.io and can be included in your Cargo enabled project like this:
 
@@ -18,6 +21,14 @@ Then include it in your code like this:
 
 ```rust
 extern crate async_msp_lib;
+```
+
+build release
+```
+cargo build --features suppport_int32_setting_type
+
+cargo make --makefile ./Makefile.toml --no-workspace release-all-int32
+cargo make --makefile ./Makefile.toml --no-workspace release-int32
 ```
 
 
