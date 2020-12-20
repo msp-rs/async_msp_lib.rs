@@ -1,6 +1,5 @@
 extern crate alloc;
 extern crate multiwii_serial_protocol_v2;
-extern crate serialport;
 extern crate packed_struct;
 
 use multiwii_serial_protocol_v2::{MspCommandCode, MspPacket, MspPacketDirection, structs::*};

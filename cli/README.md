@@ -116,7 +116,7 @@ cargo install --locked async_msp_cli
 ```
 
 ```bash
-git clone git://github.com/BurntSushi/async_msp_cli
+git clone git://github.com/msp-rs/async_msp_lib
 cd async_msp_cli
 cargo build --release
 ```

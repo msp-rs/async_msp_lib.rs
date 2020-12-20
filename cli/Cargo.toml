@@ -16,7 +16,7 @@ keywords = ["msp", "multiwii", "inav", "betaflight"]
 [dependencies]
 multiwii_serial_protocol_v2 = "0.1.12"
 async_msp_lib = { path = "../" }
-serialport = { git = "https://github.com/Susurrus/serialport-rs" }
+serialport = "4.0.0"
 packed_struct = "0.3"
 packed_struct_codegen = "0.3"
 futures = "0.3.4"
