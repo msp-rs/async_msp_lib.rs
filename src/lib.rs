@@ -10,7 +10,6 @@ use std::time::Duration;
 use std::convert::TryInto;
 use std::collections::HashMap;
 use futures::{future::{FutureExt, try_join_all}, select};
-use async_std::prelude::*;
 
 pub mod core;
 
